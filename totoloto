@@ -1,3 +1,4 @@
+#R language
 library(numbers)
 library(readr)
 data<-read.table("path_to_lottery_values.txt")
