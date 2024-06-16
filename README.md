@@ -1,0 +1,2 @@
+# lotteries
+Lotteries guesser
