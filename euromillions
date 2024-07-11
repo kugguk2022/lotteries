@@ -86,11 +86,15 @@ h<-moebius(i)
 }
 g
 poi
-cor(g,poi)
 
-EM<-glm(poi~g)
+g1<-g[1:length(g)-1]
+poi
+cor(g1,poi)
+
+EM<-glm(poi~g1)
 summary(EM)
 predict(EM)
+
 
 summary(output)
 VALUE<-which(G==poi[length(poi)])
