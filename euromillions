@@ -94,8 +94,15 @@ cor(g1,poi)
 EM<-glm(poi~g1)
 summary(EM)
 predict(EM)
-
-
 summary(output)
-VALUE<-which(G==poi[length(poi)])
-GUESS<-t(c[,VALUE])
+
+predicted<-predict(EM, data.frame(g[2:length(g)]), type='response')
+summary(output)
+###Averagings last 5
+VALUE<-which(G==round(mean(poi[(length(poi)-5):length(poi)])))
+GUESS<-t(c[,VALUE])		
+####
+#VALUE<-which(G==poi[length(poi)])
+#GUESS<-t(c[,VALUE])
+###using glm of euler totient, use EM glm values
+
