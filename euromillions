@@ -104,5 +104,16 @@ GUESS<-t(c[,VALUE])
 ####
 #VALUE<-which(G==poi[length(poi)])
 #GUESS<-t(c[,VALUE])
-###using glm of euler totient, use EM glm values
 
+#Manhatan distance
+target_row <- data[1371, 1:5]  # Adjust the indexing if your data has more columns
+# Manhattan distance function
+manhattan_distance <- function(row1, row2) {
+  sum(abs(row1 - row2))
+}
+distances <- apply(GUESS, 1, function(row) manhattan_distance(row, target_row))
+closest_row_index <- which.min(distances)
+closest_row <- GUESS[closest_row_index, ]
+print(closest_row)
+print(min(distances))
+print(closest_row_index)
