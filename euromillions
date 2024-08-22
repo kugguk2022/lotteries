@@ -106,7 +106,7 @@ GUESS<-t(c[,VALUE])
 #GUESS<-t(c[,VALUE])
 
 #Manhatan distance
-target_row <- data[1371, 1:5]  # Adjust the indexing if your data has more columns
+target_row <- data[1372, 1:5]  # Adjust the indexing if your data has more columns or rows
 # Manhattan distance function
 manhattan_distance <- function(row1, row2) {
   sum(abs(row1 - row2))
