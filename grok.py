@@ -6,8 +6,8 @@ from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import StandardScaler
 
 # File paths
-sequence_a_path = r"/mnt/c/users/pmfar/desktop/totient/g1.csv"
-sequence_b_path = r"/mnt/c/users/pmfar/desktop/totient/poi.csv"
+sequence_a_path = r"/mnt/c/data/desktop/totient/g1.csv"
+sequence_b_path = r"/mnt/c/data/totient/poi.csv"
 
 # Load sequences from CSV files
 sequence_a = pd.read_csv(sequence_a_path, header=None).squeeze("columns")
