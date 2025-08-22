@@ -1,10 +1,13 @@
-# lotteries
-Lotteries guesser
-
 # 🎲 Lotteries — analysis & guessing toolkit
 
 Small research playground for lottery data (EuroMillions, Totoloto, and EuroDreams/“Edreams”).  
-Focus: clean datasets, quick feature engineering, sanity/randomness checks, and a few baseline models for ranking number combinations. **This is research code—use responsibly.**
+Focus: clean datasets, quick feature engineering, sanity/randomness checks, and baseline models for ranking number combinations. **This is research code—use responsibly.**
+
+---
+
+## ✨ What’s new
+- **2025‑08‑22** — Added docs & examples for `euromillions/get_draws` (CSV/JSON exporter).  
+- **Planned** — `euromillions/roi.py`: walk‑forward backtests, EV gating, bankroll/ROI metrics.
 
 ---
 
@@ -12,17 +15,19 @@ Focus: clean datasets, quick feature engineering, sanity/randomness checks, and 
 
 ```
 lotteries/
-├─ Edreams/                   # EuroDreams / Euromilhões Dreams experiments (WIP)
-├─ euromillions/              # EuroMillions-specific scripts/notebooks (WIP)
-├─ totoloto/                  # Totoloto-specific scripts/notebooks (WIP)
-├─ grok.py                    # Shared helpers/experiments
-├─ euromillions_values.txt    # Helper values used by heuristics
-├─ lottery_values.txt         # Helper values used by heuristics
-├─ LICENSE                    # MIT
+├─ Edreams/                         # EuroDreams / Euromilhões Dreams experiments (WIP)
+├─ euromillions/
+│  ├─ get_draws.py                  # Fetch & normalize EuroMillions draw history (now available)
+│  └─ roi.py                        # ROI / backtesting & EV gates (planned)
+├─ totoloto/                        # Totoloto-specific scripts/notebooks (WIP)
+├─ grok.py                          # Shared helpers/experiments
+├─ euromillions_values.txt          # Heuristic weights/prior values (optional)
+├─ lottery_values.txt               # Heuristic weights/prior values (optional)
+├─ LICENSE                          # MIT
 └─ README.md
 ```
 
-> Tip: the `*_values.txt` files are simple newline‑separated lists you can tweak; scripts read them as weights, seeds, or “value tables” depending on experiment.
+> The `*_values.txt` files are simple newline-separated lists you can tweak; scripts may read them as weights, seeds, or “value tables” depending on experiment.
 
 ---
 
@@ -42,89 +47,120 @@ source .venv/bin/activate
 ```
 
 ### 2) Install minimal dependencies
-> The repo keeps dependencies light so you can mix and match.
 ```bash
 python -m pip install -U pip
-pip install numpy pandas scipy scikit-learn statsmodels matplotlib
+pip install numpy pandas scipy scikit-learn statsmodels matplotlib requests python-dateutil
 ```
 
-### 3) Bring your data
-Place CSVs under each game folder (or anywhere you prefer) with simple schemas like:
+---
 
-- **EuroMillions**:  
-  `draw_date, n1, n2, n3, n4, n5, star1, star2`
+## 🇪🇺 EuroMillions: `get_draws` (now available)
 
-- **Totoloto** (adjust as needed):  
-  `draw_date, n1, n2, n3, n4, n5, bonus`
+Fetches historical EuroMillions draws, normalizes schema, and saves to **CSV** or **JSON**.  
+Intended as a clean, reproducible source for downstream feature engineering and backtests.
 
-- **EuroDreams** (adjust as needed):  
-  `draw_date, n1, n2, n3, n4, n5, n6, dream`
-
-> Column names aren’t strict—just keep them consistent and update scripts if you rename.
-
-### 4) Run experiments
-Most scripts accept `--help`. Typical flows:
-
+### CLI
 ```bash
-# See what grok.py can do
-python grok.py --help
-
-# Example: run a simple ranking or feature dump on EuroMillions data
-python euromillions/<script>.py --csv path/to/euromillions.csv --out out/euromillions_run
-
-# Example: Totoloto
-python totoloto/<script>.py --csv path/to/totoloto.csv --out out/totoloto_run
+python euromillions/get_draws.py --help
 ```
 
-> If a script doesn’t exist yet, use the notebooks in each folder or create your own runner—this repo is intentionally flexible.
-
----
-
-## 🧩 What’s inside (methods & ideas)
-
-- **Feature engineering**: frequencies, gaps, hot/cold, residues (mod k), digit sums, parity, primes, pair/cluster counts.
-- **Randomness checks**: chi-square, runs test, gap test, serial correlation; optional OU/random‑matrix diagnostics as visuals.
-- **Baselines**: simple ML rankers (e.g., logistic/linear baselines, trees) comparing candidate sets; walk‑forward backtests.
-- **EV gate (optional)**: only output picks when expected value clears a configurable threshold.
-- **Heuristics**: value tables from `*_values.txt` as light priors/weights.
-
-> None of the above implies predictability. These are *sanity tools* to compare heuristics and avoid self‑deception.
-
----
-
-## 📊 Example: minimal “feature dump”
+### Examples
 ```bash
-python euromillions/features.py   --csv data/euromillions.csv   --report out/eur_features.json   --plots out/eur_plots
+# 1) Full history → CSV
+python euromillions/get_draws.py --out data/euromillions.csv
+
+# 2) Date‑bounded export
+python euromillions/get_draws.py --from 2016-01-01 --to 2025-08-22 --out data/eur_2016_2025.csv
+
+# 3) JSON output
+python euromillions/get_draws.py --format json --out data/euromillions.json
+
+# 4) Append to existing (dedup by draw_date)
+python euromillions/get_draws.py --out data/euromillions.csv --append
 ```
-(If `features.py` isn’t present yet, copy a template from `grok.py` or start a notebook—this repo encourages quick iteration.)
+
+> **Notes**
+> - Default output is CSV unless `--format json` is provided.  
+> - Script performs light validation (range checks, dedup by `draw_date`, ascending sort).  
+> - If a data source requires a key or alternate URL, update constants at the top of `get_draws.py`.
+
+### Output schema (CSV)
+| column        | type   | notes |
+|---------------|--------|-------|
+| `draw_date`   | date   | ISO `YYYY-MM-DD` |
+| `n1..n5`      | int    | 5 main numbers |
+| `star1,star2` | int    | 2 Lucky Stars |
+| `jackpot`     | float? | if available (EUR) |
+| `rollover`    | int?   | optional |
+| `source_url`  | str    | provenance (if captured) |
+| `scraped_at`  | datetime | UTC timestamp of fetch |
+
+> Columns with `?` appear only if available from the upstream source.
 
 ---
 
-## 🧪 Backtesting (suggested)
-1. Split by date (strictly past → future).  
-2. Fit on history, rank candidates for the next draw.  
-3. Record hits + diagnostics.  
-4. Repeat rolling.  
-5. Compare against random baselines.
+## 📊 Feature engineering (shared ideas)
 
-A simple leaderboard JSON/CSV in `out/` helps track which ideas survive longer than chance.
+- Frequencies, gaps, hot/cold, digit sums, parity, primes, pair/cluster counts
+- Residues (mod *k*), wheel residues (e.g., mod 210), repeating patterns
+- Randomness checks: chi-square, runs test, serial correlation; optional OU / random‑matrix style visuals
+- Baseline rankers: simple ML (logistic/linear, trees) with strict walk‑forward splits
+
+---
+
+## 💸 EuroMillions ROI module (planned)
+
+`euromillions/roi.py` will provide **walk‑forward** evaluation of simple strategies, bankroll tracking, and EV filters.
+
+**Design (subject to change):**
+```bash
+python euromillions/roi.py   --csv data/euromillions.csv   --strategy freq            \  # freq | gaps | wheel | hybrid | random
+  --window 365               \  # days of history for features
+  --tickets 10               \  # tickets per draw
+  --budget 5                 \  # € per ticket (adjust to real rules)
+  --ev-min 1.2               \  # only place bets if EV >= 1.2 * cost
+  --kelly 0.25               \  # optional Kelly fraction on bankroll
+  --out out/roi_euromillions.csv
+```
+
+**Planned metrics**
+- Hit rate (any prize / tiered), mean payout, **ROI**, cumulative P&L
+- Max drawdown, time‑to‑recover, volatility
+- Baseline vs. random ticket sets
+- Per‑strategy leaderboard CSV
+
+**Risk controls**
+- EV gate (skip low‑value draws), bankroll caps, Kelly fraction (optional), stop‑loss limits
+
+> Nothing here implies predictability—this is for controlled experiments and to avoid self‑deception (compare vs random baselines).
+
+---
+
+## 🧪 Backtesting discipline (suggested)
+
+1. Split by date (past → future only).  
+2. Fit features on a rolling window; generate candidates for the **next** draw.  
+3. Record tickets, hits, payouts, and diagnostics.  
+4. Repeat forward; compare strategies vs random.  
+5. Keep a leaderboard in `out/` (CSV/JSON).
 
 ---
 
 ## 📦 Data hygiene
 
-- Avoid future leakage (don’t compute features using future draws).
-- Keep draw dates in ISO (YYYY‑MM‑DD).
-- Normalize number ranges to the real game rules before comparing.
+- Avoid future leakage (no peeking past the target draw).  
+- Keep draw dates in ISO (YYYY‑MM‑DD).  
+- Normalize number ranges to the real game rules before comparing.  
+- Deduplicate by `draw_date` + full combination when applicable.
 
 ---
 
 ## 🤝 Contributing
 
 PRs/issues welcome:
-- Add clean, reproducible scripts for each game.
-- Keep dependencies minimal.
-- Prefer small, self‑contained experiments over monoliths.
+- Add clean, reproducible scripts per game.  
+- Keep dependencies minimal.  
+- Prefer small, self‑contained experiments over monoliths.  
 - Document input/output clearly (`--help` should explain flags).
 
 ---
@@ -138,4 +174,3 @@ This code is for **research and education** only. Lotteries are games of chance;
 ## 📜 License
 
 [MIT](LICENSE)
-
