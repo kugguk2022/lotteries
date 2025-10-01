@@ -60,7 +60,7 @@ cd lotteries
 # Python 3.10+ recommended
 python -m venv .venv
 # Windows
-.\.venv\Scriptsctivate
+.\.venv\Scripts\activate
 # macOS/Linux
 source .venv/bin/activate
 ```
