@@ -33,17 +33,27 @@ Focus: clean datasets, quick feature engineering, sanity/randomness checks, and 
 ## 📁 Project structure
 
 ```
-lotteries/
-├─ Edreams/                         # EuroDreams / Euromilhões Dreams experiments (WIP)
-├─ euromillions/
-│  ├─ get_draws.py                  # Fetch & normalize EuroMillions draw history (now available)
-│  └─ roi.py                        # ROI / backtesting & EV gates (planned)
-├─ totoloto/                        # Totoloto-specific scripts/notebooks (WIP)
-├─ grok.py                          # Shared helpers/experiments
-├─ euromillions_values.txt          # Heuristic weights/prior values (optional)
-├─ lottery_values.txt               # Heuristic weights/prior values (optional)
-├─ LICENSE                          # MIT
-└─ README.md
+├─ README.md                        # This file
+├─ eurodreams/                      # EuroDreams analysis
+│  └─ Edreams.py                    # EuroDreams ticket generation algorithm
+├─ euromillions/                    # EuroMillions analysis suite
+│  ├─ euromillions_2016_2025.csv    # Historical data (2016-2025)
+│  ├─ euromillions_values.txt       # Heuristic weights/prior values
+│  ├─ euromillions.r                # R analysis script
+│  ├─ get_draws.py                  # Fetch & normalize EuroMillions draw history
+│  ├─ grok.py                       # Neural network analysis for EuroMillions
+│  └─ roi.py                        # ROI analysis and backtesting lab
+├─ euromillions_agent/              # EuroMillions scraping and prize tools
+│  ├─ fetch_prizes_range.py         # Fetch prize ranges
+│  ├─ fetch_prizes.py               # Fetch individual prize breakdowns
+│  └─ lotto_lab.py                  # Complete analysis laboratory
+└─ totoloto/                        # Portuguese Totoloto analysis
+   ├─ grok.py                       # Neural network analysis for Totoloto
+   ├─ lottery_values.txt            # Heuristic weights/prior values
+   └─ totoloto.r                    # R analysis script
+├─ grok.py                          # Main neural network analysis script
+├─ setup.py                         # Project setup and dependency installer
+├─ requirements.txt                 # Python dependencies
 ```
 
 > The `*_values.txt` files are simple newline-separated lists you can tweak; scripts may read them as weights, seeds, or “value tables” depending on experiment.
