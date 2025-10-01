@@ -1,204 +1,120 @@
-#!/usr/bin/env python3
-"""
-Fetch EuroMillions draws, filter 2016–2025 inclusive, and save as one CSV.
+﻿from __future__ import annotations
 
-Primary source: MerseyWorld Euro -> Winning_index?display=CSV (full history)
-Fallback:      euromillions.api.pedromealha.dev /v1/draws (JSON, 2004->present)
-
-Output columns (CSV, chronological order):
-draw_no,date,weekday,n1,n2,n3,n4,n5,star1,star2,jackpot,jackpot_wins
-"""
 import argparse
-import csv
-import datetime as dt
+import hashlib
 import json
-import re
-import sys
-from typing import Dict, Iterable, List, Optional, Tuple
+from io import StringIO
+from pathlib import Path
+from typing import Dict
 
+import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter, Retry
 
-MERSEYWORLD_URL = (
-    "https://lottery.merseyworld.com/Euro/Winning_index.html"
-    "?display=CSV&order=1&show=1&year=0"
-)
-API_URL = "https://euromillions.api.pedromealha.dev/v1/draws"
+from .schema import validate_df
 
-MONTHS = {m: i for i, m in enumerate(
-    ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], start=1)
-}
+PRIMARY_URL = "https://www.merseyworld.com/euromillions/resultsArchive.php?format=csv"
+CACHE_DIR = Path(".cache/euromillions")
 
-FIELDS = [
-    "draw_no","date","weekday","n1","n2","n3","n4","n5","star1","star2","jackpot","jackpot_wins"
-]
 
-def _iso(y: int, mmm: str, d: int) -> str:
-    return dt.date(y, MONTHS[mmm], d).isoformat()
+def _session() -> requests.Session:
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=0.5, status_forcelist=(429, 500, 502, 503, 504))
+    session.mount("https://", HTTPAdapter(max_retries=retries))
+    session.headers.update({"User-Agent": "lotteries/0.1 (github.com/kugguk2022/lotteries)"})
+    return session
 
-def _int_or_none(x: str) -> Optional[int]:
-    x = x.strip()
-    if not x:
-        return None
-    # keep only digits (jackpot often has commas)
-    digits = re.sub(r"[^\d]", "", x)
-    return int(digits) if digits else None
 
-def fetch_mersey() -> str:
-    r = requests.get(MERSEYWORLD_URL, timeout=30)
-    r.raise_for_status()
-    return r.text
+def _cache_key(url: str, params: Dict[str, str]) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    raw = f"{url}|{json.dumps(params, sort_keys=True)}".encode()
+    digest = hashlib.sha256(raw).hexdigest()[:16]
+    return CACHE_DIR / f"{digest}.csv"
 
-def mersey_lines(html: str) -> Iterable[str]:
-    m = re.search(r"<pre[^>]*>(.*?)</pre>", html, flags=re.S|re.I)
-    if not m:
-        raise RuntimeError("CSV <pre> block not found on MerseyWorld page")
-    pre = m.group(1)
-    for ln in (ln.strip() for ln in pre.splitlines()):
-        # Header or data rows only (skip explanatory text)
-        if ln.startswith("No.,") or re.match(r"^\d+,\s", ln):
-            yield ln
 
-def parse_mersey(lines: Iterable[str]) -> List[Dict]:
-    import csv as _csv
-    rows = list(_csv.reader(lines))
-    if not rows or not rows[0][0].startswith("No."):
-        raise RuntimeError("Unexpected MerseyWorld header")
-    out = []
-    for r in rows[1:]:
-        # Expected minimal layout:
-        # 0 No. 1 Day 2 DD 3 MMM 4 YYYY 5..9 nums 10..11 stars 12 Jackpot 13 Wins
-        if len(r) < 14:
-            continue
-        try:
-            date_iso = _iso(int(r[4]), r[3], int(r[2]))
-        except Exception:
-            continue
-        rec = {
-            "draw_no": int(r[0]),
-            "date": date_iso,
-            "weekday": r[1].strip(),
-            "n1": int(r[5]), "n2": int(r[6]), "n3": int(r[7]), "n4": int(r[8]), "n5": int(r[9]),
-            "star1": int(r[10]), "star2": int(r[11]),
-            "jackpot": _int_or_none(r[12]),
-            "jackpot_wins": _int_or_none(r[13]),
-        }
-        out.append(rec)
-    return out
+def fetch_raw_csv(date_from: str | None = None, date_to: str | None = None) -> str:
+    params: Dict[str, str] = {}
+    if date_from:
+        params["from"] = date_from
+    if date_to:
+        params["to"] = date_to
 
-def fetch_api() -> List[Dict]:
-    r = requests.get(API_URL, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    out = []
-    for d in data:
-        date_iso = d.get("draw_date") or d.get("date")  # API uses draw_date
-        if not date_iso:
-            continue
-        date_iso = date_iso[:10]
-        nums = d.get("numbers") or []
-        stars = d.get("stars") or []
-        if len(nums) != 5 or len(stars) != 2:
-            continue
-        out.append({
-            "draw_no": int(d.get("id") or d.get("draw_id")),
-            "date": date_iso,
-            "weekday": d.get("day_of_week") or "",
-            "n1": int(nums[0]), "n2": int(nums[1]), "n3": int(nums[2]),
-            "n4": int(nums[3]), "n5": int(nums[4]),
-            "star1": int(stars[0]), "star2": int(stars[1]),
-            "jackpot": d.get("jackpot_eur"),
-            "jackpot_wins": d.get("jackpot_winners"),
-        })
-    return out
+    cache_file = _cache_key(PRIMARY_URL, params)
+    if cache_file.exists():
+        return cache_file.read_text(encoding="utf-8")
 
-def filter_year_range(recs: List[Dict], start_year: int, end_year: int) -> List[Dict]:
-    out = []
-    for r in recs:
-        y = int(r["date"][:4])
-        if start_year <= y <= end_year:
-            out.append(r)
-    return out
+    with _session().get(PRIMARY_URL, params=params, timeout=5) as response:
+        response.raise_for_status()
+        if "text" not in response.headers.get("Content-Type", ""):
+            raise RuntimeError(f"Unexpected content type: {response.headers.get('Content-Type')}")
+        text = response.text
+        cache_file.write_text(text, encoding="utf-8")
+        return text
 
-def dedupe_keep_latest(recs: List[Dict]) -> List[Dict]:
-    """
-    Rare protection: if both sources are combined, keep one per draw_no (prefer later date/complete fields).
-    """
-    best: Dict[int, Dict] = {}
-    for r in recs:
-        k = r["draw_no"]
-        prev = best.get(k)
-        if not prev:
-            best[k] = r
-            continue
-        # Prefer the one with jackpot info if available, or later date
-        def score(x: Dict) -> Tuple[int, str]:
-            return (1 if x.get("jackpot") is not None else 0, x["date"])
-        best[k] = max([prev, r], key=score)
-    return list(best.values())
 
-def save_csv(recs: List[Dict], path: str) -> None:
-    recs_sorted = sorted(recs, key=lambda x: (x["date"], x["draw_no"]))
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=FIELDS)
-        w.writeheader()
-        for r in recs_sorted:
-            w.writerow({k: r.get(k) for k in FIELDS})
+def normalize(csv_text: str) -> pd.DataFrame:
+    df = pd.read_csv(StringIO(csv_text))
 
-def main():
-    ap = argparse.ArgumentParser(description="Compile EuroMillions draws 2016–2025 into one CSV (chronological).")
-    ap.add_argument("--out", default="euromillions_2016_2025.csv",
-                    help="Output CSV file (default: euromillions_2016_2025.csv)")
-    ap.add_argument("--start-year", type=int, default=2016)
-    ap.add_argument("--end-year", type=int, default=2025)
-    ap.add_argument("--source", choices=["auto","mersey","api"], default="auto",
-                    help="Data source preference: auto (default), mersey, or api")
-    args = ap.parse_args()
+    rename = {}
+    for column in df.columns:
+        norm = column.lower().strip().replace(" ", "_")
+        rename[column] = norm
+    df = df.rename(columns=rename)
 
-    recs: List[Dict] = []
+    mapping = {
+        "date": "draw_date",
+        "draw_date": "draw_date",
+        "ball1": "ball_1",
+        "ball_1": "ball_1",
+        "ball2": "ball_2",
+        "ball_2": "ball_2",
+        "ball3": "ball_3",
+        "ball_3": "ball_3",
+        "ball4": "ball_4",
+        "ball_4": "ball_4",
+        "ball5": "ball_5",
+        "ball_5": "ball_5",
+        "lucky_star1": "star_1",
+        "lucky_star_1": "star_1",
+        "star_1": "star_1",
+        "lucky_star2": "star_2",
+        "lucky_star_2": "star_2",
+        "star_2": "star_2",
+    }
+    df = df.rename(columns={key: value for key, value in mapping.items() if key in df.columns})
 
-    try_mersey = args.source in ("auto","mersey")
-    try_api = args.source in ("auto","api")
+    keep = ["draw_date", "ball_1", "ball_2", "ball_3", "ball_4", "ball_5", "star_1", "star_2"]
+    df = df[keep]
+    df = validate_df(df)
+    df = df.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
+    return df
 
-    err_msgs = []
 
-    if try_mersey:
-        try:
-            html = fetch_mersey()
-            lines = list(mersey_lines(html))
-            recs_m = parse_mersey(lines)
-            recs.extend(recs_m)
-        except Exception as e:
-            err_msgs.append(f"MerseyWorld failed: {e}")
+def write_csv(df: pd.DataFrame, out_path: Path, append: bool) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if append and out_path.exists():
+        previous = pd.read_csv(out_path, parse_dates=["draw_date"])
+        previous = validate_df(previous)
+        df = pd.concat([previous, df], axis=0, ignore_index=True)
+        df = df.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
 
-    if (not recs) and try_api:
-        try:
-            recs_api = fetch_api()
-            recs.extend(recs_api)
-        except Exception as e:
-            err_msgs.append(f"API failed: {e}")
+    df.to_csv(out_path, index=False)
 
-    if not recs:
-        raise SystemExit("No records fetched.\n" + "\n".join(err_msgs))
 
-    # If both sources were used (auto mode) we might have duplicates -> dedupe
-    recs = dedupe_keep_latest(recs)
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Fetch EuroMillions draws and write normalized CSV")
+    parser.add_argument("--from", dest="date_from", default=None, help="YYYY-MM-DD (inclusive)")
+    parser.add_argument("--to", dest="date_to", default=None, help="YYYY-MM-DD (inclusive)")
+    parser.add_argument("--out", type=Path, required=True, help="Output CSV path")
+    parser.add_argument("--append", action="store_true", help="Append/dedup to existing CSV")
+    args = parser.parse_args()
 
-    # Filter year range
-    recs = filter_year_range(recs, args.start_year, args.end_year)
+    raw_csv = fetch_raw_csv(args.date_from, args.date_to)
+    dataframe = normalize(raw_csv)
+    write_csv(dataframe, args.out, append=args.append)
 
-    if not recs:
-        raise SystemExit("No records in requested year range.")
+    print(f"Wrote {len(dataframe):,} rows -> {args.out}")
 
-    save_csv(recs, args.out)
-
-    print(f"OK: wrote {len(recs)} draws to {args.out} "
-          f"({recs[0]['date']} → {recs[-1]['date']}).")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("Aborted.", file=sys.stderr)
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+    main()
