@@ -1,5 +1,24 @@
 # 🎲 Lotteries — analysis & guessing toolkit
 
+Small research playground for lottery data (EuroMillions, Totoloto, and EuroDreams/"Edreams").  
+Focus: clean datasets, quick feature engineering, sanity/randomness checks, and baseline models for ranking number combinations. **This is research code—use responsibly.**
+
+---
+
+## 🔧 Issues Fixed (Recent Update)
+
+✅ **Deprecated pandas method**: Fixed `fillna(method='ffill')` → `fillna().ffill()`  
+✅ **Hard-coded Linux paths**: Replaced with relative/flexible paths that work on Windows  
+✅ **Missing dependencies**: Added comprehensive `requirements.txt`  
+✅ **File path issues**: Added error handling for missing data files  
+✅ **Cross-platform compatibility**: Fixed PowerShell command compatibility  
+✅ **Code maintainability**: Improved error handling and documentation  
+
+## ✨ What's new
+- **2025‑10‑01** — Major code fixes and cross-platform compatibility improvements
+- **2025‑08‑22** — Added docs & examples for `euromillions/get_draws` (CSV/JSON exporter).  
+- **Planned** — `euromillions/roi.py`: walk‑forward backtests, EV gating, bankroll/ROI metrics.ries — analysis & guessing toolkit
+
 Small research playground for lottery data (EuroMillions, Totoloto, and EuroDreams/“Edreams”).  
 Focus: clean datasets, quick feature engineering, sanity/randomness checks, and baseline models for ranking number combinations. **This is research code—use responsibly.**
 

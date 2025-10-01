@@ -7,10 +7,15 @@ def main():
     # ------------------------------------------------------
     # 1. Load Data and Ensure Output Folder
     # ------------------------------------------------------
-    data_path = r"/mnt/c/Users/path/desktop/eurodreams/eurodreams_draws_2023_to_2025.csv"
-    data = pd.read_csv(data_path)
+    data_path = "eurodreams_draws_2023_to_2025.csv"  # Adjust this path to your actual data location
+    try:
+        data = pd.read_csv(data_path)
+    except FileNotFoundError:
+        print(f"Error: Could not find {data_path}")
+        print("Please ensure the data file exists in the current directory.")
+        return
     
-    edreams_folder = r"/mnt/c/Users/path/Desktop/Edreams"
+    edreams_folder = "Edreams_output"  # Output folder in current directory
     if not os.path.exists(edreams_folder):
         os.makedirs(edreams_folder)
     

@@ -5,13 +5,21 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import StandardScaler
 
-# File paths
-sequence_a_path = r"/mnt/c/data/desktop/totient/g1.csv"
-sequence_b_path = r"/mnt/c/data/totient/poi.csv"
+# File paths - using relative paths (create these files or adjust paths as needed)
+sequence_a_path = "../data/g1.csv"  # Adjust this path to your actual data location
+sequence_b_path = "../data/poi.csv"  # Adjust this path to your actual data location
 
-# Load sequences from CSV files
-sequence_a = pd.read_csv(sequence_a_path, header=None).squeeze("columns")
-sequence_b = pd.read_csv(sequence_b_path, header=None).squeeze("columns")
+# Load sequences from CSV files with error handling
+try:
+    sequence_a = pd.read_csv(sequence_a_path, header=None).squeeze("columns")
+    sequence_b = pd.read_csv(sequence_b_path, header=None).squeeze("columns")
+except FileNotFoundError as e:
+    print(f"Error: Could not find data files. Please check paths: {e}")
+    print("Creating sample data for demonstration...")
+    # Create sample data if files don't exist
+    np.random.seed(42)
+    sequence_a = pd.Series(np.random.randn(1000).cumsum())
+    sequence_b = pd.Series(0.8 * sequence_a + 0.2 * np.random.randn(1000))
 
 # Ensure both sequences are the same length
 min_length = min(len(sequence_a), len(sequence_b))
@@ -20,9 +28,13 @@ sequence_b = sequence_b[:min_length]
 
 # Combine into a DataFrame and ensure numeric data
 df = pd.DataFrame({
-    'sequence_a': pd.to_numeric(sequence_a, errors='coerce').fillna(method='ffill'),
-    'sequence_b': pd.to_numeric(sequence_b, errors='coerce').fillna(method='ffill')
+    'sequence_a': pd.to_numeric(sequence_a, errors='coerce'),
+    'sequence_b': pd.to_numeric(sequence_b, errors='coerce')
 })
+
+# Fix deprecated fillna method
+df['sequence_a'] = df['sequence_a'].ffill()
+df['sequence_b'] = df['sequence_b'].ffill()
 
 # Normalize sequences for better stability
 scaler_a = StandardScaler()
