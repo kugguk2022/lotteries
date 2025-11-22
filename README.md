@@ -8,6 +8,7 @@ Lottery data playground for EuroMillions, Totoloto, and EuroDreams. The goal is 
 
 - Fetch EuroMillions draws with retry, caching, deduplication, and 5s network timeouts.
 - Pandera schema keeps draw columns consistent and type-safe.
+- Ticket helper validates/scores EuroMillions 5-number + 2-star guesses.
 - Existing labs (`grok.py`, `roi.py`, etc.) for experimentation with each lottery.
 - Developer tooling via `pyproject.toml`, Ruff, pytest, and optional Makefile helpers.
 
@@ -67,6 +68,24 @@ python -m euromillions.get_draws --out data/euromillions.csv --append
 python -m euromillions.get_draws --from 2023-01-01 --to 2024-12-31 --out data/euromillions_2023_2024.csv
 ```
 
+### Checking a EuroMillions Ticket
+
+```python
+from euromillions import EuroMillionsGuess, evaluate_guess
+from euromillions.get_draws import normalize
+
+csv_text = (
+    "Date,Ball1,Ball2,Ball3,Ball4,Ball5,Lucky Star1,Lucky Star2\n"
+    "2024-01-12,5,18,22,37,45,4,9\n"
+)
+draw = normalize(csv_text).iloc[0]
+
+guess = EuroMillionsGuess(balls=[5, 18, 22, 37, 45], stars=[4, 9])
+ball_hits, star_hits = evaluate_guess(draw, guess)
+
+print(f"Matched {ball_hits} numbers and {star_hits} stars")
+```
+
 ### Sample CSV Output
 
 ```csv
@@ -94,7 +113,7 @@ draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
 
 ## Testing
 
-Minimal smoke tests live in `tests/`. They do not require network access and focus on schema and normalization behaviour. Extend with dataset-specific fixtures as new functionality lands.
+Pytest coverage lives in `tests/` for schema validation, CSV normalization, and ticket scoring. Suites run offline; install dev extras with `pip install -e ".[dev]"` before executing `pytest`.
 
 ## Legacy R Scripts
 
