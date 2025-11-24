@@ -135,8 +135,8 @@ This repository is for research and education only. Lotteries remain games of ch
 If you use this work in your research, please cite:
 
 @software{Lotteries2025,
-  title={Inference in European Lotteries},
-  author={kugguk2022},
-  year={2025},
-  url={https://github.com/kugguk2022/lotteries}
+  -title={Inference in European Lotteries},
+  -author={kugguk2022},
+  -year={2025},
+  -url={https://github.com/kugguk2022/lotteries}
 }
