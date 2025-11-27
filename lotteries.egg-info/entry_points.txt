@@ -1,0 +1,2 @@
+[console_scripts]
+lotto-get-draws = euromillions.get_draws:main

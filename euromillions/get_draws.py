@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 import requests
@@ -16,8 +16,10 @@ from urllib3.util.retry import Retry
 
 from .schema import validate_df
 
-PRIMARY_URL = "https://www.national-lottery.co.uk/results/euromillions/draw-history/csv"
+PRIMARY_URL = "https://www.merseyworld.com/euromillions/resultsArchive.php?format=csv"
+SECONDARY_URL = "https://www.national-lottery.co.uk/results/euromillions/draw-history/csv"
 CACHE_DIR = Path(".cache/euromillions")
+_MIN_ROWS_FULL_HISTORY = 200
 
 
 class FetchError(RuntimeError):
@@ -72,9 +74,11 @@ def fetch_raw_csv(
     session: Optional[requests.Session] = None,
     cache_dir: Path | None = None,
     use_cache: bool = True,
+    urls: Optional[List[str]] = None,
+    min_rows_full_history: int = _MIN_ROWS_FULL_HISTORY,
 ) -> str:
     """
-    Fetch CSV text from MerseyWorld with retries + on-disk caching.
+    Fetch CSV text from EuroMillions sources with retries + on-disk caching.
 
     Set ``EUROMILLIONS_CACHE_DIR`` or pass ``cache_dir`` to control cache location.
     If ``use_cache`` is False, the network is always hit.
@@ -86,26 +90,66 @@ def fetch_raw_csv(
     if date_to:
         params["to"] = date_to
 
-    cache_file = _cache_key(PRIMARY_URL, params, _cache_dir(cache_dir))
-    if use_cache and cache_file.exists():
-        return cache_file.read_text(encoding="utf-8")
+    candidates = urls or [PRIMARY_URL, SECONDARY_URL]
+    errors: List[str] = []
 
-    try:
-        with (session or _session()).get(PRIMARY_URL, params=params, timeout=5) as response:
-            response.raise_for_status()
-            if "text" not in response.headers.get("Content-Type", ""):
-                raise ContentTypeError(f"Unexpected content type: {response.headers.get('Content-Type')}")
-            text = response.text
-            cache_file.write_text(text, encoding="utf-8")
+    def _looks_like_draw_csv(text: str) -> bool:
+        header = text.splitlines()[0].lower() if text else ""
+        return "ball1" in header or "ball 1" in header or "lucky" in header or "star" in header
+
+    def _looks_complete(text: str) -> bool:
+        if date_from or date_to:
+            return True
+        return _looks_like_draw_csv(text) and (text.count("\n") + 1 >= min_rows_full_history)
+
+    best_valid_text: str | None = None
+
+    for url in candidates:
+        cache_file = _cache_key(url, params, _cache_dir(cache_dir))
+        if use_cache and cache_file.exists():
+            cached = cache_file.read_text(encoding="utf-8")
+            if _looks_complete(cached):
+                return cached
+            if _looks_like_draw_csv(cached):
+                best_valid_text = best_valid_text or cached
+                return cached
+
+        try:
+            with (session or _session()).get(url, params=params, timeout=5) as response:
+                response.raise_for_status()
+                if "text" not in response.headers.get("Content-Type", ""):
+                    raise ContentTypeError(f"Unexpected content type: {response.headers.get('Content-Type')}")
+                text = response.text
+                if not _looks_like_draw_csv(text):
+                    errors.append(f"{url}: unexpected payload (missing draw headers)")
+                    continue
+                cache_file.write_text(text, encoding="utf-8")
+        except requests.RequestException as exc:  # network / HTTP errors
+            errors.append(f"{url}: {exc}")
+            if cache_file.exists() and use_cache:
+                cached = cache_file.read_text(encoding="utf-8")
+                if _looks_complete(cached):
+                    return cached
+                if _looks_like_draw_csv(cached):
+                    best_valid_text = best_valid_text or cached
+            continue
+
+        if _looks_complete(text):
             return text
-    except requests.RequestException as exc:  # network / HTTP errors
-        if cache_file.exists() and use_cache:
-            return cache_file.read_text(encoding="utf-8")
-        raise FetchError(f"Failed to fetch EuroMillions CSV: {exc}") from exc
+        if _looks_like_draw_csv(text):
+            best_valid_text = best_valid_text or text
+        errors.append(f"{url}: insufficient rows ({text.count(chr(10)) + 1})")
+
+    if best_valid_text:
+        return best_valid_text
+    raise FetchError("Failed to fetch EuroMillions CSV; attempts: " + "; ".join(errors))
 
 
 def normalize(csv_text: str) -> pd.DataFrame:
-    df = pd.read_csv(StringIO(csv_text))
+    try:
+        df = pd.read_csv(StringIO(csv_text))
+    except Exception as exc:
+        raise NormalizationError(f"Failed to parse CSV payload: {exc}") from exc
 
     rename = {}
     for column in df.columns:

@@ -23,7 +23,7 @@ def test_fetch_uses_cache_on_failure(tmp_path, monkeypatch):
     cache_file = _cache_key(PRIMARY_URL, {}, tmp_path)
     cache_file.write_text("Date,Ball1,Ball2,Ball3,Ball4,Ball5,Lucky Star1,Lucky Star2\n", encoding="utf-8")
 
-    text = fetch_raw_csv(session=_FailingSession())
+    text = fetch_raw_csv(session=_FailingSession(), min_rows_full_history=1)
 
     assert "Ball1" in text
 
@@ -51,3 +51,41 @@ def test_normalize_dedupes_duplicates():
 
     assert len(df) == 1
     assert pd.to_datetime(df.iloc[0]["draw_date"]).date().isoformat() == "2024-01-02"
+
+
+def test_fetch_falls_back_when_first_source_short(tmp_path, monkeypatch):
+    from euromillions.get_draws import fetch_raw_csv, PRIMARY_URL, SECONDARY_URL
+
+    short_csv = "Date,Ball1,Ball2,Ball3,Ball4,Ball5,Lucky Star1,Lucky Star2\n2024-01-01,1,2,3,4,5,1,2\n"
+    long_csv = short_csv + short_csv + short_csv  # 3 rows -> still small but shows switch
+
+    class _Response:
+        def __init__(self, text: str):
+            self.text = text
+            self.headers = {"Content-Type": "text/csv"}
+
+        def raise_for_status(self):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    class _Session:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, params=None, timeout=5):
+            self.calls.append(url)
+            if url == PRIMARY_URL:
+                return _Response(short_csv)
+            return _Response(long_csv)
+
+    monkeypatch.setenv("EUROMILLIONS_CACHE_DIR", str(tmp_path))
+    session = _Session()
+    text = fetch_raw_csv(session=session, urls=[PRIMARY_URL, SECONDARY_URL], min_rows_full_history=4)
+
+    assert SECONDARY_URL in session.calls
+    assert text.count("\n") + 1 >= 4
