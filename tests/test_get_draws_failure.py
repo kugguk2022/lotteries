@@ -18,7 +18,9 @@ class _FailingSession:
 
 def test_fetch_uses_cache_on_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("EUROMILLIONS_CACHE_DIR", str(tmp_path))
-    cache_file = _cache_key("url", {}, tmp_path)
+    from euromillions.get_draws import PRIMARY_URL  # local import to avoid cycle
+
+    cache_file = _cache_key(PRIMARY_URL, {}, tmp_path)
     cache_file.write_text("Date,Ball1,Ball2,Ball3,Ball4,Ball5,Lucky Star1,Lucky Star2\n", encoding="utf-8")
 
     text = fetch_raw_csv(session=_FailingSession())

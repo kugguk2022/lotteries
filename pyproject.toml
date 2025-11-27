@@ -53,7 +53,7 @@ lotto-get-draws = "euromillions.get_draws:main"
 # lotto-roi = "euromillions.roi:main"
 
 [tool.setuptools.packages.find]
-include = ["euromillions"]
+include = ["euromillions", "totoloto", "eurodreams", "euromillions_agent"]
 
 [tool.ruff]
 line-length = 100
