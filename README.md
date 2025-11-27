@@ -1,137 +1,110 @@
 # Lotteries
 
-[![CI](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml/badge.svg)](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml)
+[![CI status](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml)
 
-Lottery data playground for EuroMillions, Totoloto, and EuroDreams. The goal is to collect clean datasets, explore statistical signals, and prototype ranking models. Everything here is research-focused; use it responsibly.
+Lottery data playground for EuroMillions, Totoloto, and EuroDreams. The repo ships a small typed public API plus a set of labs for modelling, bankroll experiments, and scraping. Everything is research-focused; use it responsibly.
 
-## Features
-
-- Fetch EuroMillions draws with retry, caching, deduplication, and 5s network timeouts.
-- Pandera schema keeps draw columns consistent and type-safe.
-- Ticket helper validates/scores EuroMillions 5-number + 2-star guesses.
-- Existing labs (`grok.py`, `roi.py`, etc.) for experimentation with each lottery.
-- Developer tooling via `pyproject.toml`, Ruff, pytest, and optional Makefile helpers.
-
-## Project Layout
-
-```text
-lotteries/
-|-- euromillions/
-|   |-- get_draws.py        # Normalized EuroMillions fetcher (CLI entrypoint)
-|   |-- schema.py           # Pandera schema + helpers
-|   |-- grok.py             # EuroMillions modelling lab
-|   |-- roi.py              # ROI backtesting sandbox (planned)
-|-- eurodreams/             # EuroDreams analysis scripts
-|-- totoloto/               # Totoloto analysis scripts
-|-- data/                   # Local datasets (gitignored)
-|-- Makefile                # Optional developer shortcuts
-|-- pyproject.toml          # Project metadata and dependencies
-|-- requirements.txt        # Editable-install helper
-|-- README.md               # This document
-```
-
-## Getting Started
+## Quickstart
 
 ```bash
 git clone https://github.com/kugguk2022/lotteries
 cd lotteries
-
 python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
+.\.venv\Scripts\activate    # Windows
+# or: source .venv/bin/activate
 python -m pip install -U pip
 pip install -e ".[dev]"
-```
 
-### Useful Commands
+# Quality gate
+make test
 
-```bash
-# Run Ruff lint
-ruff check .
-
-# Execute tests
-pytest -q
-
-# Fetch EuroMillions draws into data/euromillions.csv
+# Fetch EuroMillions history and append to a cached CSV
 python -m euromillions.get_draws --out data/euromillions.csv --append
 ```
 
-## EuroMillions `get_draws`
+## Motivation & Roadmap
 
-Fetches historical EuroMillions draws from the MerseyWorld CSV endpoint, caches responses locally, retries transient failures, and normalizes the output. The script deduplicates on `draw_date` and validates via Pandera before writing a CSV.
+- **Stable** [`euromillions/get_draws.py`](euromillions/get_draws.py): signal detection + clean data ingest (retry, cache, normalize); [`euromillions/guess.py`](euromillions/guess.py) for ticket scoring; [`euromillions/schema.py`](euromillions/schema.py) for typed draws. Research hooks: signal detection, schema-first feature building.
+- **Lab** [`euromillions/roi.py`](euromillions/roi.py): EV gating and walk-forward bankroll simulation before ranking tickets.
+- **Lab** [`totoloto/`](totoloto): Portuguese Totoloto scraping + robustness checks across lotteries.
+- **Lab** [`eurodreams/`](eurodreams): EuroDreams fetchers to study annuity-style payouts and draw drift.
+- **Lab** [`euromillions_agent/`](euromillions_agent): agent/discriminator/grok/mixer stack for richer modelling.
+- **Lab** [`grok.py`](grok.py): standalone transformer sandbox.
+- **Deprecated** legacy R files (`*.r`) kept only for provenance.
+- Releases: tag milestones like `v0.1` (stable EuroMillions fetch + schema + scoring) so downstream users can pin versions and cite specific URIs.
 
-```bash
-python -m euromillions.get_draws --out data/euromillions.csv --append
-python -m euromillions.get_draws --from 2023-01-01 --to 2024-12-31 --out data/euromillions_2023_2024.csv
-```
+## Typed Public API (Python)
 
-### Checking a EuroMillions Ticket
+- `euromillions.EuroMillionsGuess`: immutable ticket with validation and sorting.
+- `euromillions.evaluate_guess`: returns `(ball_hits, star_hits)` against a normalized draw.
+- `euromillions.normalize`: CSV text -> validated `DataFrame` (Pandera schema enforced).
+- `euromillions.load_history`: convenience reader for CSVs produced by this repo.
+Everything else is internal or experimental; docstrings call out lab status explicitly.
 
-```python
-from euromillions import EuroMillionsGuess, evaluate_guess
-from euromillions.get_draws import normalize
+## Folder Quickstarts
 
-csv_text = (
-    "Date,Ball1,Ball2,Ball3,Ball4,Ball5,Lucky Star1,Lucky Star2\n"
-    "2024-01-12,5,18,22,37,45,4,9\n"
-)
-draw = normalize(csv_text).iloc[0]
+- `euromillions/`: `python -m euromillions.get_draws --out data/euromillions.csv --append`; then score tickets:
+  ```python
+  from euromillions import EuroMillionsGuess, evaluate_guess, load_history
+  df = load_history("data/euromillions.csv")
+  guess = EuroMillionsGuess([1, 2, 20, 30, 40], [3, 11])
+  print(evaluate_guess(df.iloc[-1], guess))
+  ```
+- `totoloto/`: `python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025`; JSON: `--format json --out data/totoloto.json`.
+- `eurodreams/`: `python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025`; pick a source with `--source irish|euro|lottery_ie`.
 
-guess = EuroMillionsGuess(balls=[5, 18, 22, 37, 45], stars=[4, 9])
-ball_hits, star_hits = evaluate_guess(draw, guess)
+## EuroMillions `get_draws` (CLI + API)
 
-print(f"Matched {ball_hits} numbers and {star_hits} stars")
-```
+Arguments
 
-### Sample CSV Output
+| Flag | Purpose | Default |
+| --- | --- | --- |
+| `--from`, `--to` | Inclusive date window (`YYYY-MM-DD`) | None (full history) |
+| `--out` | Output CSV path (required) | – |
+| `--append` | Dedup + append to existing CSV | False |
+| `--cache-dir` | Override cache root (hash-named CSV blobs) | `.cache/euromillions` |
+| `--no-cache` | Bypass cache read/write | Uses cache |
+| `--quiet` | Suppress summary print | False |
 
-```csv
-draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
-2024-01-02,1,2,3,4,5,1,2
-2024-01-09,6,7,8,9,10,3,4
-2024-01-16,11,12,13,14,15,5,6
-```
+Error modes: `FetchError` on network failures, `ContentTypeError` if the remote endpoint returns a non-text payload, `NormalizationError` when the CSV is missing expected columns after renaming, and Pandera validation errors for out-of-range values. Cache files are keyed by URL + parameters and stored under `cache_dir/digest.csv`; set `EUROMILLIONS_CACHE_DIR` to change the location globally.
 
-### Output Schema
+Recipes
 
-- `draw_date`: ISO `YYYY-MM-DD`
-- `ball_1` .. `ball_5`: integers 1-50
-- `star_1`, `star_2`: integers 1-12
+- Full history CSV: `python -m euromillions.get_draws --out data/euromillions.csv --append`
+- Year-limited: `python -m euromillions.get_draws --from 2023-01-01 --to 2024-12-31 --out data/euromillions_2023_2024.csv`
+- Incremental nightly refresh (keeps cache warm): `python -m euromillions.get_draws --from 2024-01-01 --out data/euromillions.csv --append --cache-dir .cache/euromillions`
+- In-memory use (no write): `from euromillions.get_draws import fetch_and_normalize; df = fetch_and_normalize().dataframe`
 
-### Validation
+## Labs
 
-`euromillions/schema.py` defines the canonical Pandera schema. `validate_df` coerces `draw_date` to timezone-naive timestamps and enforces number ranges (1-50 for balls, 1-12 for stars). Tests cover both the schema and CSV normalization pipeline.
+- `grok.py`: transformer-based dual-sequence lab; run `python grok.py` after placing data in `data/`. See `labs/README.md` for inputs/outputs and baseline reproduction notes.
+- `euromillions_agent/`: agent + discriminator + grok + CEM mixer; entrypoints documented in `euromillions_agent/README.md`. Treat outputs as experimental and keep PRs isolated.
+- `euromillions/roi.py`: labelled as a lab for EV gating and walk-forward bankroll simulations; not wired into the CLI yet.
 
-## EuroMillions ROI (Planned)
+## Examples & Docs
 
-**Not implemented yet -- CLI will error if run.**
+- `examples/euromillions_hello_world.ipynb`: fetch history, compute marginal number/star frequencies, score synthetic tickets, and plot simple distributions.
+- `examples/README.md`: notebook roadmap and short how-to-run notes.
+- `tests/README.md`: what the suite covers and how long it takes.
 
-`euromillions/roi.py` will host walk-forward bankroll simulations, EV gating, and ticket ranking. The CLI entry point will be exposed once the module is production-ready.
+## Research Ideas
 
-## Testing
+- Frequency baselines: marginal counts + recency decay vs. naive uniform draws.
+- Signal detection: chi-square or permutation tests on co-occurrence matrices to spot weak structure.
+- EV gating: simple prize-table EV vs. bankroll simulations before ranking tickets.
+- Walk-forward bankroll: rolling windows with risk caps to mimic “live” play.
+- Bayesian sanity checks: posterior over hit rates with conjugate priors; flag drift in draws.
 
-Pytest coverage lives in `tests/` for schema validation, CSV normalization, and ticket scoring. Suites run offline; install dev extras with `pip install -e ".[dev]"` before executing `pytest`.
+## Contributing & Community
 
-## Legacy R Scripts
-
-R notebooks and `.r` files remain for historical reference but are deprecated. Prefer the Python pipelines when adding new work.
-
-## Contributing
-
-Pull requests are welcome. Please keep experiments isolated, document inputs/outputs, and add unit tests when introducing new behaviours.
-
-## Disclaimer
-
-This repository is for research and education only. Lotteries remain games of chance; nothing here is financial advice.
+Open a PR or start a Discussion if you want to add new lotteries, tighten docs, or port labs. See `CONTRIBUTING.md` for “good first experiments” and documentation tasks. Please keep experiments isolated, document inputs/outputs, and add tests for new behaviours. Tag releases when milestones land so downstream users can pin versions and cite specific URIs.
 
 ## License
 
 [MIT](LICENSE)
 
-##Citation
+## Citation
+
 If you use this work in your research, please cite:
 
 @software{Lotteries2025,

@@ -1,4 +1,4 @@
-﻿.PHONY: venv install lint test draws
+.PHONY: venv install lint test draws quality
 
 venv:
 	python -m venv .venv
@@ -10,7 +10,10 @@ lint:
 	ruff check .
 
 test:
+	ruff check .
 	pytest -q
+
+quality: test
 
 draws:
 	python -m euromillions.get_draws --out data/euromillions.csv --append

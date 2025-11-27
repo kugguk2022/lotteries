@@ -1,19 +1,29 @@
-# Totoloto
+# Totoloto (lab)
 
+Portuguese Totoloto fetcher and parsing utilities. Treated as a lab; expect the HTML to drift and file formats to evolve.
 
-pip install requests
+## Quickstart
 
-# Full history since 2000 → CSV
-python3 totoloto_get_draws.py --out data/totoloto.csv
+```bash
+# Full history (default ranges 1-49 mains, 1-13 bonus)
+python totoloto/totoloto_get_draws.py --out data/totoloto.csv
 
-# A specific window
-python3 totoloto_get_draws.py --out data/totoloto_2015_2025.csv --start-year 2015 --end-year 2025
+# Limit by year range
+python totoloto/totoloto_get_draws.py --out data/totoloto_2015_2025.csv --start-year 2015 --end-year 2025
 
 # JSON output
-python3 totoloto_get_draws.py --format json --out data/totoloto.json
+python totoloto/totoloto_get_draws.py --format json --out data/totoloto.json
 
-# If rules differ (override ranges)
-python3 totoloto_get_draws.py --out data/totoloto.csv --ball-range 1 49 --bonus-range 1 13
+# Override rules if the lottery changes
+python totoloto/totoloto_get_draws.py --out data/totoloto.csv --ball-range 1 49 --bonus-range 1 13
+```
 
+## Inputs & Outputs
 
-Legacy R scripts in this folder are deprecated and kept for reference only. Prefer the Python modules in this package for new work.
+- Inputs: per-year HTML archive pages from euro-millions.com/PT.
+- Outputs: CSV/JSON with `draw_date, weekday, ball_1..ball_5, bonus, draw_code, source_url`, deduped chronologically.
+
+## Notes
+
+- Lab status: parsing heuristics are best-effort and may need refreshes.
+- Legacy R scripts (`*.r`) are deprecated but kept for provenance.
