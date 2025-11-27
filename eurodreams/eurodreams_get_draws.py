@@ -15,6 +15,7 @@ Notes
 - This script does not include prize breakdowns or annuity details.
 - Dependencies: requests
 """
+
 import argparse
 import csv
 import datetime as dt
@@ -25,15 +26,12 @@ from typing import Dict, List, Optional
 
 import requests
 
-
 IRISH_ARCHIVE_URL = "https://www.irishlottery.com/eurodreams-archive"
 EUROMILLIONS_YEAR_URL = "https://www.euro-millions.com/pt/eurodreams/arquivo-de-resultados-{year}"
 LOTTERY_IE_HISTORY_URL = "https://www.lottery.ie/results/eurodreams/history"  # last ~90 days
 
 
-FIELDS = [
-    "date","weekday","n1","n2","n3","n4","n5","n6","dream","draw_code","source_url"
-]
+FIELDS = ["date", "weekday", "n1", "n2", "n3", "n4", "n5", "n6", "dream", "draw_code", "source_url"]
 
 
 def _weekday_name(iso_date: str) -> str:
@@ -83,8 +81,12 @@ def parse_irish_archive(html: str) -> List[Dict]:
         rec = {
             "date": date_iso,
             "weekday": _weekday_name(date_iso),
-            "n1": mains[0], "n2": mains[1], "n3": mains[2],
-            "n4": mains[3], "n5": mains[4], "n6": mains[5],
+            "n1": mains[0],
+            "n2": mains[1],
+            "n3": mains[2],
+            "n4": mains[3],
+            "n5": mains[4],
+            "n6": mains[5],
             "dream": dream,
             "draw_code": "",
             "source_url": IRISH_ARCHIVE_URL,
@@ -106,7 +108,8 @@ def parse_euromillions_year(html: str, year: int) -> List[Dict]:
 
     for m in re.finditer(
         r"(?:>([A-Za-zÀ-ÿ]+\s+\d{1,2}\s+de\s+[A-Za-zÀ-ÿ]+\s+\d{4})<).*?(\d{3}/\d{4}).*?(<ul[^>]*>.*?</ul>)",
-        html, flags=re.S | re.I,
+        html,
+        flags=re.S | re.I,
     ):
         date_pt = m.group(1)
         draw_code = m.group(2)
@@ -119,9 +122,19 @@ def parse_euromillions_year(html: str, year: int) -> List[Dict]:
         month_name = md.group(2).strip().lower()
 
         MONTHS_PT = {
-            "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3, "abril": 4,
-            "maio": 5, "junho": 6, "julho": 7, "agosto": 8,
-            "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
+            "janeiro": 1,
+            "fevereiro": 2,
+            "março": 3,
+            "marco": 3,
+            "abril": 4,
+            "maio": 5,
+            "junho": 6,
+            "julho": 7,
+            "agosto": 8,
+            "setembro": 9,
+            "outubro": 10,
+            "novembro": 11,
+            "dezembro": 12,
         }
         month = MONTHS_PT.get(month_name) or MONTHS_PT.get(month_name.capitalize(), None)
         year_val = int(md.group(3))
@@ -138,8 +151,12 @@ def parse_euromillions_year(html: str, year: int) -> List[Dict]:
         rec = {
             "date": date_iso,
             "weekday": _weekday_name(date_iso),
-            "n1": mains[0], "n2": mains[1], "n3": mains[2],
-            "n4": mains[3], "n5": mains[4], "n6": mains[5],
+            "n1": mains[0],
+            "n2": mains[1],
+            "n3": mains[2],
+            "n4": mains[3],
+            "n5": mains[4],
+            "n6": mains[5],
             "dream": dream,
             "draw_code": draw_code,
             "source_url": EUROMILLIONS_YEAR_URL.format(year=year),
@@ -171,8 +188,12 @@ def parse_lottery_ie_recent(html: str) -> List[Dict]:
         rec = {
             "date": date_iso,
             "weekday": _weekday_name(date_iso),
-            "n1": mains[0], "n2": mains[1], "n3": mains[2],
-            "n4": mains[3], "n5": mains[4], "n6": mains[5],
+            "n1": mains[0],
+            "n2": mains[1],
+            "n3": mains[2],
+            "n4": mains[3],
+            "n5": mains[4],
+            "n6": mains[5],
             "dream": dream,
             "draw_code": "",
             "source_url": LOTTERY_IE_HISTORY_URL,
@@ -218,13 +239,23 @@ def save_json(recs: List[Dict], path: str) -> None:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Compile EuroDreams draws (2023-present) into CSV/JSON (chronological).")
-    ap.add_argument("--out", default="eurodreams_all.csv", help="Output file path (default: eurodreams_all.csv)")
-    ap.add_argument("--format", choices=["csv", "json"], default="csv", help="Output format (default: csv)")
+    ap = argparse.ArgumentParser(
+        description="Compile EuroDreams draws (2023-present) into CSV/JSON (chronological)."
+    )
+    ap.add_argument(
+        "--out", default="eurodreams_all.csv", help="Output file path (default: eurodreams_all.csv)"
+    )
+    ap.add_argument(
+        "--format", choices=["csv", "json"], default="csv", help="Output format (default: csv)"
+    )
     ap.add_argument("--start-year", type=int, default=2023, help="Start year (default: 2023)")
     ap.add_argument("--end-year", type=int, default=9999, help="End year (default: no upper bound)")
-    ap.add_argument("--source", choices=["auto", "irish", "euro", "lottery_ie"], default="auto",
-                    help="Source preference: auto (try all), irish (primary), euro (euromillions per-year), lottery_ie (recent only)")
+    ap.add_argument(
+        "--source",
+        choices=["auto", "irish", "euro", "lottery_ie"],
+        default="auto",
+        help="Source preference: auto (try all), irish (primary), euro (euromillions per-year), lottery_ie (recent only)",
+    )
     args = ap.parse_args()
 
     recs: List[Dict] = []
@@ -266,8 +297,7 @@ def main():
     else:
         save_json(recs, args.out)
 
-    print(f"OK: wrote {len(recs)} draws to {args.out} "
-          f"({recs[0]['date']} → {recs[-1]['date']}).")
+    print(f"OK: wrote {len(recs)} draws to {args.out} ({recs[0]['date']} → {recs[-1]['date']}).")
     if errors:
         print("Warnings:\n  " + "\n  ".join(errors))
 

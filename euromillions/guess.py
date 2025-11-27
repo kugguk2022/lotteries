@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence, Tuple
+from typing import Mapping, Sequence, Tuple
 
 import pandas as pd
 
@@ -12,7 +12,9 @@ _STAR_MIN, _STAR_MAX = 1, 12
 def _ensure_sorted_unique(values: Sequence[int], expected_len: int, label: str) -> Tuple[int, ...]:
     numeric = tuple(int(v) for v in values)
     if len(numeric) != expected_len:
-        raise ValueError(f"EuroMillions expects {expected_len} unique {label} values, got {len(numeric)}")
+        raise ValueError(
+            f"EuroMillions expects {expected_len} unique {label} values, got {len(numeric)}"
+        )
     if len(set(numeric)) != expected_len:
         raise ValueError(f"{label.capitalize()} values must be unique")
     return tuple(sorted(numeric))
@@ -55,7 +57,9 @@ class EuroMillionsGuess:
         return {"balls": self.balls, "stars": self.stars}
 
 
-def evaluate_guess(draw: Mapping[str, int] | pd.Series, guess: EuroMillionsGuess) -> tuple[int, int]:
+def evaluate_guess(
+    draw: Mapping[str, int] | pd.Series, guess: EuroMillionsGuess
+) -> tuple[int, int]:
     """Return (ball_hits, star_hits) for a guess against a normalized draw record."""
 
     draw_balls = {int(draw[f"ball_{i}"]) for i in range(1, 6)}

@@ -9,6 +9,7 @@ Stable surface:
 
 Everything else in this package should be treated as experimental.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,7 +31,16 @@ def load_history(path: str | Path, *, expect_columns: bool = True) -> pd.DataFra
 
     df = pd.read_csv(path, parse_dates=["draw_date"])
     if expect_columns:
-        expected = {"draw_date", "ball_1", "ball_2", "ball_3", "ball_4", "ball_5", "star_1", "star_2"}
+        expected = {
+            "draw_date",
+            "ball_1",
+            "ball_2",
+            "ball_3",
+            "ball_4",
+            "ball_5",
+            "star_1",
+            "star_2",
+        }
         missing = expected.difference(df.columns)
         if missing:
             raise ValueError(f"Missing expected columns: {sorted(missing)}")

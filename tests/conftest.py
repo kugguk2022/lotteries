@@ -1,5 +1,5 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Ensure the repository root is importable when running tests directly from the repo.
 ROOT = Path(__file__).resolve().parents[1]

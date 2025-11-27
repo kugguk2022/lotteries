@@ -1,4 +1,4 @@
-﻿from euromillions.get_draws import normalize
+from euromillions.get_draws import normalize
 
 
 def test_normalize_parses_minimal_csv():

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -19,7 +19,7 @@ from .schema import validate_df
 PRIMARY_URL = "https://www.merseyworld.com/euromillions/resultsArchive.php?format=csv"
 SECONDARY_URL = "https://www.national-lottery.co.uk/results/euromillions/draw-history/csv"
 CACHE_DIR = Path(".cache/euromillions")
-_MIN_ROWS_FULL_HISTORY = 200
+_MIN_ROWS_FULL_HISTORY = 300
 
 
 class FetchError(RuntimeError):
@@ -76,6 +76,7 @@ def fetch_raw_csv(
     use_cache: bool = True,
     urls: Optional[List[str]] = None,
     min_rows_full_history: int = _MIN_ROWS_FULL_HISTORY,
+    allow_partial: bool = False,
 ) -> str:
     """
     Fetch CSV text from EuroMillions sources with retries + on-disk caching.
@@ -98,11 +99,11 @@ def fetch_raw_csv(
         return "ball1" in header or "ball 1" in header or "lucky" in header or "star" in header
 
     def _looks_complete(text: str) -> bool:
-        if date_from or date_to:
+        if not _looks_like_draw_csv(text):
+            return False
+        if date_from or date_to or allow_partial:
             return True
-        return _looks_like_draw_csv(text) and (text.count("\n") + 1 >= min_rows_full_history)
-
-    best_valid_text: str | None = None
+        return text.count("\n") + 1 >= min_rows_full_history
 
     for url in candidates:
         cache_file = _cache_key(url, params, _cache_dir(cache_dir))
@@ -110,15 +111,16 @@ def fetch_raw_csv(
             cached = cache_file.read_text(encoding="utf-8")
             if _looks_complete(cached):
                 return cached
-            if _looks_like_draw_csv(cached):
-                best_valid_text = best_valid_text or cached
+            if allow_partial and _looks_like_draw_csv(cached):
                 return cached
 
         try:
             with (session or _session()).get(url, params=params, timeout=5) as response:
                 response.raise_for_status()
                 if "text" not in response.headers.get("Content-Type", ""):
-                    raise ContentTypeError(f"Unexpected content type: {response.headers.get('Content-Type')}")
+                    raise ContentTypeError(
+                        f"Unexpected content type: {response.headers.get('Content-Type')}"
+                    )
                 text = response.text
                 if not _looks_like_draw_csv(text):
                     errors.append(f"{url}: unexpected payload (missing draw headers)")
@@ -130,18 +132,16 @@ def fetch_raw_csv(
                 cached = cache_file.read_text(encoding="utf-8")
                 if _looks_complete(cached):
                     return cached
-                if _looks_like_draw_csv(cached):
-                    best_valid_text = best_valid_text or cached
+                if allow_partial and _looks_like_draw_csv(cached):
+                    return cached
             continue
 
         if _looks_complete(text):
             return text
-        if _looks_like_draw_csv(text):
-            best_valid_text = best_valid_text or text
+        if allow_partial and _looks_like_draw_csv(text):
+            return text
         errors.append(f"{url}: insufficient rows ({text.count(chr(10)) + 1})")
 
-    if best_valid_text:
-        return best_valid_text
     raise FetchError("Failed to fetch EuroMillions CSV; attempts: " + "; ".join(errors))
 
 
@@ -199,7 +199,9 @@ def write_csv(df: pd.DataFrame, out_path: Path, append: bool) -> None:
         previous = pd.read_csv(out_path, parse_dates=["draw_date"])
         previous = validate_df(previous)
         df = pd.concat([previous, df], axis=0, ignore_index=True)
-        df = df.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
+        df = (
+            df.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
+        )
 
     df.to_csv(out_path, index=False)
 
@@ -213,6 +215,7 @@ def fetch_and_normalize(
     session: Optional[requests.Session] = None,
     cache_dir: Path | None = None,
     use_cache: bool = True,
+    allow_partial: bool = False,
 ) -> FetchResult:
     """High-level helper used by the CLI and tests."""
 
@@ -222,6 +225,7 @@ def fetch_and_normalize(
         session=session,
         cache_dir=cache_dir,
         use_cache=use_cache,
+        allow_partial=allow_partial,
     )
     dataframe = normalize(raw_csv)
     cache_params = {k: v for k, v in {"from": date_from, "to": date_to}.items() if v}
@@ -233,14 +237,28 @@ def fetch_and_normalize(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fetch EuroMillions draws and write normalized CSV")
+    parser = argparse.ArgumentParser(
+        description="Fetch EuroMillions draws and write normalized CSV"
+    )
     parser.add_argument("--from", dest="date_from", default=None, help="YYYY-MM-DD (inclusive)")
     parser.add_argument("--to", dest="date_to", default=None, help="YYYY-MM-DD (inclusive)")
     parser.add_argument("--out", type=Path, required=True, help="Output CSV path")
     parser.add_argument("--append", action="store_true", help="Append/dedup to existing CSV")
-    parser.add_argument("--cache-dir", type=Path, default=None, help="Override cache directory (.cache/euromillions)")
-    parser.add_argument("--no-cache", dest="use_cache", action="store_false", help="Bypass local cache on fetch")
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=None,
+        help="Override cache directory (.cache/euromillions)",
+    )
+    parser.add_argument(
+        "--no-cache", dest="use_cache", action="store_false", help="Bypass local cache on fetch"
+    )
     parser.add_argument("--quiet", action="store_true", help="Suppress summary print")
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Allow truncated datasets if full history is unavailable",
+    )
     args = parser.parse_args()
 
     result = fetch_and_normalize(
@@ -250,6 +268,7 @@ def main() -> None:
         append=args.append,
         cache_dir=args.cache_dir,
         use_cache=args.use_cache,
+        allow_partial=args.allow_partial,
     )
 
     if not args.quiet:
