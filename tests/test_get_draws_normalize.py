@@ -27,3 +27,17 @@ def test_normalize_dedupes_and_handles_whitespace():
 
     assert list(df.draw_date.astype(str)) == ["2024-01-02", "2024-01-09"]
     assert df.iloc[-1]["ball_5"] == 10
+
+
+def test_normalize_handles_national_lottery_format():
+    csv_text = (
+        "DrawDate,Ball 1,Ball 2,Ball 3,Ball 4,Ball 5,Lucky Star 1,Lucky Star 2,UK Millionaire Maker,DrawNumber\n"
+        '25-Nov-2025,6,11,17,35,44,3,7,"JWGH03530",1897\n'
+        '21-Nov-2025,17,19,29,35,48,5,9,"HVFV75870",1896\n'
+    )
+
+    df = normalize(csv_text)
+
+    assert list(df.draw_date.astype(str)) == ["2025-11-21", "2025-11-25"]
+    assert df.iloc[-1]["ball_1"] == 6
+    assert df.iloc[0]["star_2"] == 9

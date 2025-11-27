@@ -16,7 +16,7 @@ from urllib3.util.retry import Retry
 
 from .schema import validate_df
 
-PRIMARY_URL = "https://www.merseyworld.com/euromillions/resultsArchive.php?format=csv"
+PRIMARY_URL = "https://www.national-lottery.co.uk/results/euromillions/draw-history/csv"
 CACHE_DIR = Path(".cache/euromillions")
 
 
@@ -116,6 +116,7 @@ def normalize(csv_text: str) -> pd.DataFrame:
     mapping = {
         "date": "draw_date",
         "draw_date": "draw_date",
+        "drawdate": "draw_date",
         "ball1": "ball_1",
         "ball_1": "ball_1",
         "ball2": "ball_2",
