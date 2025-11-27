@@ -15,11 +15,14 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .schema import validate_df
+from .lottology import EMRow, LOTTOLOGY_ARCHIVE_URL, fetch_euromillions_lottology
 
 PRIMARY_URL = "https://www.merseyworld.com/euromillions/resultsArchive.php?format=csv"
 SECONDARY_URL = "https://www.national-lottery.co.uk/results/euromillions/draw-history/csv"
+PEDRO_URL = SECONDARY_URL
 CACHE_DIR = Path(".cache/euromillions")
 _MIN_ROWS_FULL_HISTORY = 300
+SOURCE_CHOICES = ("merseyworld", "pedro", "lottology", "auto")
 
 
 class FetchError(RuntimeError):
@@ -145,6 +148,45 @@ def fetch_raw_csv(
     raise FetchError("Failed to fetch EuroMillions CSV; attempts: " + "; ".join(errors))
 
 
+def _finalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Validate, sort, and deduplicate draws."""
+
+    df = validate_df(df)
+    return df.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
+
+
+def _apply_date_filters(df: pd.DataFrame, date_from: str | None, date_to: str | None) -> pd.DataFrame:
+    """Return a copy of df filtered by optional inclusive date bounds."""
+
+    filtered = df
+    if date_from:
+        filtered = filtered[filtered["draw_date"] >= pd.to_datetime(date_from)]
+    if date_to:
+        filtered = filtered[filtered["draw_date"] <= pd.to_datetime(date_to)]
+    return filtered.reset_index(drop=True)
+
+
+def _lottology_rows_to_df(rows: List[EMRow]) -> pd.DataFrame:
+    """Convert Lottology EMRow list into the normalized draw dataframe shape."""
+
+    df = pd.DataFrame(
+        [
+            {
+                "draw_date": row.date,
+                "ball_1": row.n1,
+                "ball_2": row.n2,
+                "ball_3": row.n3,
+                "ball_4": row.n4,
+                "ball_5": row.n5,
+                "star_1": row.star1,
+                "star_2": row.star2,
+            }
+            for row in rows
+        ]
+    )
+    return _finalize_dataframe(df)
+
+
 def normalize(csv_text: str) -> pd.DataFrame:
     try:
         df = pd.read_csv(StringIO(csv_text))
@@ -186,9 +228,7 @@ def normalize(csv_text: str) -> pd.DataFrame:
         raise NormalizationError(f"Missing expected columns after rename: {missing}")
     df = df[keep]
 
-    df = validate_df(df)
-    df = df.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
-    return df
+    return _finalize_dataframe(df)
 
 
 def write_csv(df: pd.DataFrame, out_path: Path, append: bool) -> None:
@@ -206,6 +246,69 @@ def write_csv(df: pd.DataFrame, out_path: Path, append: bool) -> None:
     df.to_csv(out_path, index=False)
 
 
+def _fetch_http_source(
+    *,
+    urls: List[str],
+    date_from: str | None,
+    date_to: str | None,
+    out_path: Path | None,
+    append: bool,
+    session: Optional[requests.Session],
+    cache_dir: Path | None,
+    use_cache: bool,
+    allow_partial: bool,
+    min_rows_full_history: int = _MIN_ROWS_FULL_HISTORY,
+) -> FetchResult:
+    raw_csv = fetch_raw_csv(
+        date_from=date_from,
+        date_to=date_to,
+        session=session,
+        cache_dir=cache_dir,
+        use_cache=use_cache,
+        urls=urls,
+        min_rows_full_history=min_rows_full_history,
+        allow_partial=allow_partial,
+    )
+    dataframe = _apply_date_filters(normalize(raw_csv), date_from, date_to)
+    cache_params = {k: v for k, v in {"from": date_from, "to": date_to}.items() if v}
+    cache_path = _cache_key(urls[0], cache_params, _cache_dir(cache_dir))
+
+    if out_path:
+        write_csv(dataframe, out_path, append=append)
+    return FetchResult(raw_csv=raw_csv, dataframe=dataframe, cache_path=cache_path)
+
+
+def _fetch_lottology_source(
+    *,
+    date_from: str | None,
+    date_to: str | None,
+    out_path: Path | None,
+    append: bool,
+    session: Optional[requests.Session],
+    cache_dir: Path | None,
+    use_cache: bool,
+) -> FetchResult:
+    cache_params = {k: v for k, v in {"from": date_from, "to": date_to}.items() if v}
+    cache_path = _cache_key(LOTTOLOGY_ARCHIVE_URL, cache_params, _cache_dir(cache_dir))
+
+    if use_cache and cache_path.exists():
+        cached_csv = cache_path.read_text(encoding="utf-8")
+        dataframe = _apply_date_filters(normalize(cached_csv), date_from, date_to)
+        if out_path:
+            write_csv(dataframe, out_path, append=append)
+        return FetchResult(raw_csv=cached_csv, dataframe=dataframe, cache_path=cache_path)
+
+    rows = fetch_euromillions_lottology(session=session)
+    dataframe = _apply_date_filters(_lottology_rows_to_df(rows), date_from, date_to)
+    raw_csv = dataframe.to_csv(index=False)
+    if use_cache:
+        cache_path.write_text(raw_csv, encoding="utf-8")
+
+    if out_path:
+        write_csv(dataframe, out_path, append=append)
+    return FetchResult(raw_csv=raw_csv, dataframe=dataframe, cache_path=cache_path)
+
+
 def fetch_and_normalize(
     *,
     date_from: str | None = None,
@@ -216,24 +319,59 @@ def fetch_and_normalize(
     cache_dir: Path | None = None,
     use_cache: bool = True,
     allow_partial: bool = False,
+    source: str = "auto",
 ) -> FetchResult:
     """High-level helper used by the CLI and tests."""
 
-    raw_csv = fetch_raw_csv(
-        date_from=date_from,
-        date_to=date_to,
-        session=session,
-        cache_dir=cache_dir,
-        use_cache=use_cache,
-        allow_partial=allow_partial,
-    )
-    dataframe = normalize(raw_csv)
-    cache_params = {k: v for k, v in {"from": date_from, "to": date_to}.items() if v}
-    cache_path = _cache_key(PRIMARY_URL, cache_params, _cache_dir(cache_dir))
+    if source not in SOURCE_CHOICES:
+        raise ValueError(f"Unsupported source {source!r}; choose from {SOURCE_CHOICES}.")
 
-    if out_path:
-        write_csv(dataframe, out_path, append=append)
-    return FetchResult(raw_csv=raw_csv, dataframe=dataframe, cache_path=cache_path)
+    candidates = ["merseyworld", "pedro", "lottology"] if source == "auto" else [source]
+    errors: List[str] = []
+
+    for candidate in candidates:
+        try:
+            if candidate == "merseyworld":
+                return _fetch_http_source(
+                    urls=[PRIMARY_URL],
+                    date_from=date_from,
+                    date_to=date_to,
+                    out_path=out_path,
+                    append=append,
+                    session=session,
+                    cache_dir=cache_dir,
+                    use_cache=use_cache,
+                    allow_partial=allow_partial,
+                )
+            if candidate == "pedro":
+                return _fetch_http_source(
+                    urls=[PEDRO_URL],
+                    date_from=date_from,
+                    date_to=date_to,
+                    out_path=out_path,
+                    append=append,
+                    session=session,
+                    cache_dir=cache_dir,
+                    use_cache=use_cache,
+                    allow_partial=allow_partial,
+                )
+            if candidate == "lottology":
+                return _fetch_lottology_source(
+                    date_from=date_from,
+                    date_to=date_to,
+                    out_path=out_path,
+                    append=append,
+                    session=session,
+                    cache_dir=cache_dir,
+                    use_cache=use_cache,
+                )
+        except Exception as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            errors.append(f"{candidate}: {exc}")
+            continue
+
+    raise FetchError("Failed to fetch EuroMillions CSV; attempts: " + "; ".join(errors))
 
 
 def main() -> None:
@@ -259,6 +397,12 @@ def main() -> None:
         action="store_true",
         help="Allow truncated datasets if full history is unavailable",
     )
+    parser.add_argument(
+        "--source",
+        choices=SOURCE_CHOICES,
+        default="auto",
+        help="Select draw source: merseyworld (default), pedro (National Lottery), lottology, or auto fallback.",
+    )
     args = parser.parse_args()
 
     result = fetch_and_normalize(
@@ -269,6 +413,7 @@ def main() -> None:
         cache_dir=args.cache_dir,
         use_cache=args.use_cache,
         allow_partial=args.allow_partial,
+        source=args.source,
     )
 
     if not args.quiet:
