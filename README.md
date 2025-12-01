@@ -21,68 +21,48 @@ make test
 # Fetch EuroMillions history and append to a cached CSV
 python -m euromillions.get_draws --out data/euromillions.csv --append
 
-diff --git a/README.md b/README.md
---- a/README.md
-+++ b/README.md
-@@ -1,6 +1,6 @@
- ## Quickstart
 
-     git clone https://github.com/kugguk2022/lotteries
-     cd lotteries
-     python -m venv .venv
-     .\.venv\Scripts\activate    # Windows
-     # or: source .venv/bin/activate
-     python -m pip install -U pip
-     pip install -e ".[dev]"
+# 1) Fetch / refresh data (all lotteries)
+    python -m euromillions.get_draws --out data/euromillions.csv --append
+    python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025
+    python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025 --source euro
 
-     # Quality gate
-     make test
+# 2) Inference (generate candidate tickets)
+    # NOTE: Adjust these entrypoints if your inference scripts are named differently.
+    mkdir -p runs
+    python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv
+    python -m totoloto.infer --history data/totoloto.csv --n 10 --out runs/totoloto_candidates.csv
+    python -m eurodreams.infer --history data/eurodreams_all.csv --n 10 --out runs/eurodreams_candidates.csv
 
--    # Fetch EuroMillions history and append to a cached CSV
--    python -m euromillions.get_draws --out data/euromillions.csv --append
-+    # 1) Fetch / refresh data (all lotteries)
-+    python -m euromillions.get_draws --out data/euromillions.csv --append
-+    python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025
-+    python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025 --source euro
-+
-+    # 2) Inference (generate candidate tickets)
-+    # NOTE: Adjust these entrypoints if your inference scripts are named differently.
-+    mkdir -p runs
-+    python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv
-+    python -m totoloto.infer --history data/totoloto.csv --n 10 --out runs/totoloto_candidates.csv
-+    python -m eurodreams.infer --history data/eurodreams_all.csv --n 10 --out runs/eurodreams_candidates.csv
-+
-+    # 3) Optional: heavier agent stack inference (if you want the “agent/discriminator/mixer” pipeline)
-+    python -m euromillions_agent.infer --history data/euromillions.csv --n 10 --out runs/euromillions_agent_candidates.csv
+# 3) Optional: heavier agent stack inference (if you want the “agent/discriminator/mixer” pipeline)
+    python -m euromillions_agent.infer --history data/euromillions.csv --n 10 --out runs/euromillions_agent_candidates.csv
 
-@@ -1,15 +1,31 @@
- ## Folder Quickstarts
+## Folder Quickstarts
 
--  * `euromillions/`: `python -m euromillions.get_draws --out data/euromillions.csv --append`; then score tickets:
-+  * `euromillions/`:
-+      - Data: `python -m euromillions.get_draws --out data/euromillions.csv --append`
-+      - Inference: `python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv`
-+      - Scoring (example):
+ `euromillions/`: `python -m euromillions.get_draws --out data/euromillions.csv --append`; then score tickets:
+ `euromillions/`:
+     - Data: `python -m euromillions.get_draws --out data/euromillions.csv --append`
+     - Inference: `python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv`
+     - Scoring (example):
  
          from euromillions import EuroMillionsGuess, evaluate_guess, load_history
          df = load_history("data/euromillions.csv")
          guess = EuroMillionsGuess([1, 2, 20, 30, 40], [3, 11])
          print(evaluate_guess(df.iloc[-1], guess))
 
--  * `totoloto/`: `python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025`; JSON: `--format json --out data/totoloto.json`.
--  * `eurodreams/`: `python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025`; pick a source with `--source irish|euro|lottery_ie`.
-+  * `totoloto/`:
-+      - Data: `python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025`
-+      - JSON: `python totoloto/totoloto_get_draws.py --format json --out data/totoloto.json --start-year 2015 --end-year 2025`
-+      - Inference: `python -m totoloto.infer --history data/totoloto.csv --n 10 --out runs/totoloto_candidates.csv`
-+
-+  * `eurodreams/`:
-+      - Data: `python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025 --source euro`
-+      - Inference: `python -m eurodreams.infer --history data/eurodreams_all.csv --n 10 --out runs/eurodreams_candidates.csv`
-+
-+  * `euromillions_agent/` (experimental):
-+      - Inference: `python -m euromillions_agent.infer --history data/euromillions.csv --n 10 --out runs/euromillions_agent_candidates.csv`
+  * `totoloto/`: `python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025`; JSON: `--format json --out data/totoloto.json`.
+  * `eurodreams/`: `python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025`; pick a source with `--source irish|euro|lottery_ie`.
+  * `totoloto/`:
+      - Data: `python totoloto/totoloto_get_draws.py --out data/totoloto.csv --start-year 2015 --end-year 2025`
+      - JSON: `python totoloto/totoloto_get_draws.py --format json --out data/totoloto.json --start-year 2015 --end-year 2025`
+      - Inference: `python -m totoloto.infer --history data/totoloto.csv --n 10 --out runs/totoloto_candidates.csv`
 
+  * `eurodreams/`:
+      - Data: `python eurodreams/eurodreams_get_draws.py --out data/eurodreams_all.csv --start-year 2023 --end-year 2025 --source euro`
+      - Inference: `python -m eurodreams.infer --history data/eurodreams_all.csv --n 10 --out runs/eurodreams_candidates.csv`
+
+  * `euromillions_agent/` (experimental):
+      - Inference: `python -m euromillions_agent.infer --history data/euromillions.csv --n 10 --out runs/euromillions_agent_candidates.csv`
 ```
 
 ## Motivation & Roadmap
