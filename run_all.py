@@ -34,7 +34,7 @@ LOTTERIES: List[LotteryConfig] = [
         "history": Path("data/totoloto.csv"),
         "fetch_cmd": [sys.executable, "totoloto/totoloto_get_draws.py", "--out", "data/totoloto.csv"],
         "main_cols": ["ball_1", "ball_2", "ball_3", "ball_4", "ball_5"],
-        "bonus_cols": ["bonus"],
+        "bonus_cols": ["star_1"],  # dataset uses star_1 as bonus column
     },
     {
         "name": "eurodreams",
@@ -68,7 +68,8 @@ def run_fetch(cmd: Sequence[str], *, dry_run: bool, quiet: bool) -> bool:
 
 
 def _counts(values: pd.Series, pop_size: int) -> np.ndarray:
-    counts = np.bincount(values.to_numpy(), minlength=pop_size + 1)
+    arr = pd.to_numeric(values, errors="coerce").dropna().astype(int).to_numpy()
+    counts = np.bincount(arr, minlength=pop_size + 1)
     return counts[1 : pop_size + 1].astype(float)
 
 
@@ -78,15 +79,19 @@ def frequency_tables(
     bonus_cols: Sequence[str],
     smoothing: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    main_max = int(df[main_cols].to_numpy().max())
-    bonus_max = int(df[bonus_cols].to_numpy().max())
+    subset = df[list(main_cols) + list(bonus_cols)].dropna()
+    if subset.empty:
+        raise ValueError("No rows with complete main+bonus numbers to score.")
+
+    main_max = int(subset[main_cols].to_numpy().max())
+    bonus_max = int(subset[bonus_cols].to_numpy().max())
 
     main_counts = np.zeros(main_max, dtype=float)
     for col in main_cols:
-        main_counts += _counts(df[col], main_max)
+        main_counts += _counts(subset[col], main_max)
     bonus_counts = np.zeros(bonus_max, dtype=float)
     for col in bonus_cols:
-        bonus_counts += _counts(df[col], bonus_max)
+        bonus_counts += _counts(subset[col], bonus_max)
 
     main_probs = (main_counts + smoothing) / (main_counts + smoothing).sum()
     bonus_probs = (bonus_counts + smoothing) / (bonus_counts + smoothing).sum()

@@ -67,7 +67,7 @@ draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
 
 Resilience notes:
 - Fetcher accepts header-less CSV payloads and trims malformed source headers.
-- `--allow-stale` reuses an existing `--out` file or the bundled `data/examples/euromillions_sample.csv` when all network sources fail.
+- `--allow-stale` reuses (in order) an existing `--out` file, the bundled `euromillions/euromillions_2016_2025.csv`, or the tiny sample `data/examples/euromillions_sample.csv` when all network sources fail.
 
 ## EuroMillions Inference (Baseline)
 

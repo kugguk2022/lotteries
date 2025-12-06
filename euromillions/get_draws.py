@@ -417,6 +417,9 @@ def fetch_and_normalize(
         fallbacks: List[Path] = []
         if out_path and out_path.exists():
             fallbacks.append(out_path)
+        bundled_full = Path("euromillions/euromillions_2016_2025.csv")
+        if bundled_full.exists():
+            fallbacks.append(bundled_full)
         default_sample = sample_path or Path("data/examples/euromillions_sample.csv")
         if default_sample.exists():
             fallbacks.append(default_sample)
