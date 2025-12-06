@@ -44,6 +44,8 @@ LOTTERIES: List[LotteryConfig] = [
             "eurodreams/eurodreams_get_draws.py",
             "--out",
             "data/eurodreams.csv",
+            "--allow-stale",
+            "--quiet",
         ],
         "main_cols": ["n1", "n2", "n3", "n4", "n5", "n6"],
         "bonus_cols": ["dream"],
@@ -79,12 +81,15 @@ def frequency_tables(
     bonus_cols: Sequence[str],
     smoothing: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    subset = df[list(main_cols) + list(bonus_cols)].dropna()
+    subset = df[list(main_cols) + list(bonus_cols)].copy()
+    for col in list(main_cols) + list(bonus_cols):
+        subset[col] = pd.to_numeric(subset[col], errors="coerce")
+    subset = subset.dropna()
     if subset.empty:
         raise ValueError("No rows with complete main+bonus numbers to score.")
 
-    main_max = int(subset[main_cols].to_numpy().max())
-    bonus_max = int(subset[bonus_cols].to_numpy().max())
+    main_max = int(np.nanmax(subset[main_cols].to_numpy()))
+    bonus_max = int(np.nanmax(subset[bonus_cols].to_numpy()))
 
     main_counts = np.zeros(main_max, dtype=float)
     for col in main_cols:

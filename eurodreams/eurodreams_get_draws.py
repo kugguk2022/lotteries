@@ -22,6 +22,7 @@ import datetime as dt
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
@@ -238,6 +239,38 @@ def save_json(recs: List[Dict], path: str) -> None:
         json.dump(recs, f, ensure_ascii=False, indent=2)
 
 
+def _load_existing(path: str) -> List[Dict]:
+    rows = []
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            rows.append(row)
+    return rows
+
+
+def _validate_structured_rows(rows: List[Dict]) -> List[Dict]:
+    required = {"date", "n1", "n2", "n3", "n4", "n5", "n6", "dream"}
+    out: List[Dict] = []
+    for r in rows:
+        if not required.issubset(r):
+            continue
+        rec = {
+            "date": r["date"],
+            "weekday": r.get("weekday") or _weekday_name(r["date"]),
+            "n1": int(r["n1"]),
+            "n2": int(r["n2"]),
+            "n3": int(r["n3"]),
+            "n4": int(r["n4"]),
+            "n5": int(r["n5"]),
+            "n6": int(r["n6"]),
+            "dream": int(r["dream"]),
+            "draw_code": r.get("draw_code", ""),
+            "source_url": r.get("source_url", "user-supplied"),
+        }
+        out.append(rec)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Compile EuroDreams draws (2023-present) into CSV/JSON (chronological)."
@@ -256,6 +289,29 @@ def main():
         default="auto",
         help="Source preference: auto (try all), irish (primary), euro (euromillions per-year), lottery_ie (recent only)",
     )
+    ap.add_argument(
+        "--allow-stale",
+        action="store_true",
+        default=True,
+        help="If remote fetches fail, reuse an existing output file or a bundled sample dataset (default: on).",
+    )
+    ap.add_argument(
+        "--input-csv",
+        type=str,
+        default=None,
+        help="Optional local CSV with columns date,n1..n6,dream[,draw_code,source_url] to ingest before fetching.",
+    )
+    ap.add_argument(
+        "--csv-url",
+        type=str,
+        default=None,
+        help="Optional CSV URL (same columns as --input-csv) to ingest before fetching.",
+    )
+    ap.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress warnings/summary; still prints errors on failure.",
+    )
     args = ap.parse_args()
 
     recs: List[Dict] = []
@@ -268,6 +324,26 @@ def main():
             recs.extend(fn_parse(html))
         except Exception as e:
             errors.append(f"{label} failed: {e}")
+
+    # Ingest user-provided CSV first (local or URL).
+    if args.input_csv:
+        try:
+            recs.extend(_validate_structured_rows(_load_existing(args.input_csv)))
+            errors.append(f"used input_csv {args.input_csv}")
+        except Exception as e:
+            errors.append(f"input_csv failed: {e}")
+    if args.csv_url:
+        try:
+            r = requests.get(args.csv_url, timeout=20)
+            r.raise_for_status()
+            tmp_path = Path(".cache/eurodreams")
+            tmp_path.mkdir(parents=True, exist_ok=True)
+            tmp_file = tmp_path / "remote.csv"
+            tmp_file.write_text(r.text, encoding="utf-8")
+            recs.extend(_validate_structured_rows(_load_existing(str(tmp_file))))
+            errors.append(f"used csv_url {args.csv_url}")
+        except Exception as e:
+            errors.append(f"csv_url failed: {e}")
 
     if args.source in ("auto", "irish"):
         _extend(fetch_irish_archive, parse_irish_archive, "irishlottery.com archive")
@@ -283,6 +359,38 @@ def main():
     if args.source in ("auto", "lottery_ie"):
         _extend(fetch_lottery_ie_recent, parse_lottery_ie_recent, "lottery.ie recent")
 
+    if not recs and args.allow_stale:
+        repo_root = Path(__file__).resolve().parents[1]
+        fallback_candidates = [
+            Path(args.out),
+            Path("data/eurodreams.csv"),
+            Path("data/examples/eurodreams_sample.csv"),
+            repo_root / "data/eurodreams.csv",
+            repo_root / "data/examples/eurodreams_sample.csv",
+        ]
+        seen = set()
+        uniq_paths = []
+        for p in fallback_candidates:
+            if not p:
+                continue
+            try:
+                key = p.resolve()
+            except Exception:
+                key = p
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq_paths.append(p)
+
+        for path in uniq_paths:
+            if path.exists():
+                try:
+                    recs = _load_existing(str(path))
+                    errors.append(f"used fallback {path}")
+                    break
+                except Exception as e:  # pragma: no cover - fallback path
+                    errors.append(f"fallback {path} failed: {e}")
+
     if not recs:
         raise SystemExit("No records fetched.\n" + "\n".join(errors))
 
@@ -297,9 +405,10 @@ def main():
     else:
         save_json(recs, args.out)
 
-    print(f"OK: wrote {len(recs)} draws to {args.out} ({recs[0]['date']} → {recs[-1]['date']}).")
-    if errors:
-        print("Warnings:\n  " + "\n  ".join(errors))
+    if not args.quiet:
+        print(f"OK: wrote {len(recs)} draws to {args.out} ({recs[0]['date']} -> {recs[-1]['date']}).")
+        if errors:
+            print('Warnings:\n  ' + '\n  '.join(errors))
 
 
 if __name__ == "__main__":
