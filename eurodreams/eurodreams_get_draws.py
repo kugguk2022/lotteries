@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""
+Get EuroDreams historical draws (2023-present) and save as a CSV or JSON.
+
+Primary source (full archive): https://www.irishlottery.com/eurodreams-archive
+Secondary source (per-year pages): https://www.euro-millions.com/pt/eurodreams/arquivo-de-resultados-YYYY
+Tertiary (recent 90 days only): https://www.lottery.ie/results/eurodreams/history
+
+Output columns (chronological, earliest -> latest):
+date,weekday,n1,n2,n3,n4,n5,n6,dream,draw_code,source_url
+
+Notes
+- draw_code is like '093/2025' when available (from euro-millions.com); otherwise empty.
+- Weekday is computed from the date in UTC (ISO YYYY-MM-DD). EuroDreams draws are Mon/Thu ~21:00 CET.
+- This script does not include prize breakdowns or annuity details.
+- Dependencies: requests
+"""
+
+import argparse
+import csv
+import datetime as dt
+import json
+import re
+import sys
+from typing import Dict, List, Optional
+
+import requests
+
+IRISH_ARCHIVE_URL = "https://www.irishlottery.com/eurodreams-archive"
+EUROMILLIONS_YEAR_URL = "https://www.euro-millions.com/pt/eurodreams/arquivo-de-resultados-{year}"
+LOTTERY_IE_HISTORY_URL = "https://www.lottery.ie/results/eurodreams/history"  # last ~90 days
+
+
+FIELDS = ["date", "weekday", "n1", "n2", "n3", "n4", "n5", "n6", "dream", "draw_code", "source_url"]
+
+
+def _weekday_name(iso_date: str) -> str:
+    y, m, d = map(int, iso_date.split("-"))
+    return dt.date(y, m, d).strftime("%a")
+
+
+def _iso_from_eng_date(text: str) -> Optional[str]:
+    """Convert strings like 'November 20th 2025' -> '2025-11-20'."""
+    m = re.search(r"\b([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})\b", text)
+    if not m:
+        return None
+    month_name, day, year = m.group(1), m.group(2), m.group(3)
+    try:
+        dt_obj = dt.datetime.strptime(f"{day} {month_name} {year}", "%d %B %Y")
+        return dt_obj.date().isoformat()
+    except Exception:
+        return None
+
+
+def fetch_irish_archive() -> str:
+    r = requests.get(IRISH_ARCHIVE_URL, timeout=30)
+    r.raise_for_status()
+    return r.text
+
+
+def parse_irish_archive(html: str) -> List[Dict]:
+    """Scan for date markers, then read the next 7 <li> integers (6 mains + dream)."""
+    out: List[Dict] = []
+    # Date anchors like >November 20th 2025<
+    date_iter = list(re.finditer(r">\s*([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?\s+\d{4})\s*<", html))
+    # All numbers in order of appearance
+    num_iter = list(re.finditer(r"<li>\s*(\d{1,2})\s*</li>", html))
+    nums_positions = [(m.start(), int(m.group(1))) for m in num_iter]
+
+    for dmatch in date_iter:
+        date_text = dmatch.group(1)
+        date_iso = _iso_from_eng_date(date_text)
+        if not date_iso:
+            continue
+        # Take the next 7 numbers after this date location
+        start_pos = dmatch.end()
+        following = [n for (pos, n) in nums_positions if pos > start_pos][:7]
+        if len(following) != 7:
+            continue
+        mains, dream = following[:6], following[6]
+        rec = {
+            "date": date_iso,
+            "weekday": _weekday_name(date_iso),
+            "n1": mains[0],
+            "n2": mains[1],
+            "n3": mains[2],
+            "n4": mains[3],
+            "n5": mains[4],
+            "n6": mains[5],
+            "dream": dream,
+            "draw_code": "",
+            "source_url": IRISH_ARCHIVE_URL,
+        }
+        out.append(rec)
+    return out
+
+
+def fetch_euromillions_year(year: int) -> str:
+    url = EUROMILLIONS_YEAR_URL.format(year=year)
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    return r.text
+
+
+def parse_euromillions_year(html: str, year: int) -> List[Dict]:
+    """Extract Portuguese date, draw_code 'NNN/YYYY', and 7 numbers (6 + dream)."""
+    out: List[Dict] = []
+
+    for m in re.finditer(
+        r"(?:>([A-Za-zÀ-ÿ]+\s+\d{1,2}\s+de\s+[A-Za-zÀ-ÿ]+\s+\d{4})<).*?(\d{3}/\d{4}).*?(<ul[^>]*>.*?</ul>)",
+        html,
+        flags=re.S | re.I,
+    ):
+        date_pt = m.group(1)
+        draw_code = m.group(2)
+        ul_html = m.group(3)
+
+        md = re.search(r"(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})", date_pt, flags=re.I)
+        if not md:
+            continue
+        day = int(md.group(1))
+        month_name = md.group(2).strip().lower()
+
+        MONTHS_PT = {
+            "janeiro": 1,
+            "fevereiro": 2,
+            "março": 3,
+            "marco": 3,
+            "abril": 4,
+            "maio": 5,
+            "junho": 6,
+            "julho": 7,
+            "agosto": 8,
+            "setembro": 9,
+            "outubro": 10,
+            "novembro": 11,
+            "dezembro": 12,
+        }
+        month = MONTHS_PT.get(month_name) or MONTHS_PT.get(month_name.capitalize(), None)
+        year_val = int(md.group(3))
+        try:
+            date_iso = dt.date(year_val, month, day).isoformat()
+        except Exception:
+            continue
+
+        nums = [int(x) for x in re.findall(r"<li>\s*(\d{1,2})\s*</li>", ul_html)]
+        if len(nums) < 7:
+            continue
+        mains, dream = nums[:6], nums[6]
+
+        rec = {
+            "date": date_iso,
+            "weekday": _weekday_name(date_iso),
+            "n1": mains[0],
+            "n2": mains[1],
+            "n3": mains[2],
+            "n4": mains[3],
+            "n5": mains[4],
+            "n6": mains[5],
+            "dream": dream,
+            "draw_code": draw_code,
+            "source_url": EUROMILLIONS_YEAR_URL.format(year=year),
+        }
+        out.append(rec)
+    return out
+
+
+def fetch_lottery_ie_recent() -> str:
+    r = requests.get(LOTTERY_IE_HISTORY_URL, timeout=30)
+    r.raise_for_status()
+    return r.text
+
+
+def parse_lottery_ie_recent(html: str) -> List[Dict]:
+    """Parse recent (last ~90 days) results from lottery.ie."""
+    out: List[Dict] = []
+    for m in re.finditer(r"(\d{1,2})/(\d{1,2})/(\d{4}).*?<ul[^>]*>(.*?)</ul>", html, flags=re.S):
+        d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        ul_html = m.group(4)
+        try:
+            date_iso = dt.date(y, mth, d).isoformat()
+        except Exception:
+            continue
+        nums = [int(x) for x in re.findall(r"<li>\s*(\d{1,2})\s*</li>", ul_html)]
+        if len(nums) < 7:
+            continue
+        mains, dream = nums[:6], nums[6]
+        rec = {
+            "date": date_iso,
+            "weekday": _weekday_name(date_iso),
+            "n1": mains[0],
+            "n2": mains[1],
+            "n3": mains[2],
+            "n4": mains[3],
+            "n5": mains[4],
+            "n6": mains[5],
+            "dream": dream,
+            "draw_code": "",
+            "source_url": LOTTERY_IE_HISTORY_URL,
+        }
+        out.append(rec)
+    return out
+
+
+def dedupe_keep_best(recs: List[Dict]) -> List[Dict]:
+    best: Dict[str, Dict] = {}
+    for r in recs:
+        k = r["date"]
+        prev = best.get(k)
+        if not prev:
+            best[k] = r
+            continue
+        # Prefer entries with draw_code; otherwise keep existing
+        if (not prev.get("draw_code")) and r.get("draw_code"):
+            best[k] = r
+    return sorted(best.values(), key=lambda x: x["date"])
+
+
+def filter_year_range(recs: List[Dict], start_year: int, end_year: int) -> List[Dict]:
+    out = []
+    for r in recs:
+        y = int(r["date"][:4])
+        if start_year <= y <= end_year:
+            out.append(r)
+    return out
+
+
+def save_csv(recs: List[Dict], path: str) -> None:
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        for r in recs:
+            w.writerow({k: r.get(k) for k in FIELDS})
+
+
+def save_json(recs: List[Dict], path: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(recs, f, ensure_ascii=False, indent=2)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Compile EuroDreams draws (2023-present) into CSV/JSON (chronological)."
+    )
+    ap.add_argument(
+        "--out", default="eurodreams_all.csv", help="Output file path (default: eurodreams_all.csv)"
+    )
+    ap.add_argument(
+        "--format", choices=["csv", "json"], default="csv", help="Output format (default: csv)"
+    )
+    ap.add_argument("--start-year", type=int, default=2023, help="Start year (default: 2023)")
+    ap.add_argument("--end-year", type=int, default=9999, help="End year (default: no upper bound)")
+    ap.add_argument(
+        "--source",
+        choices=["auto", "irish", "euro", "lottery_ie"],
+        default="auto",
+        help="Source preference: auto (try all), irish (primary), euro (euromillions per-year), lottery_ie (recent only)",
+    )
+    args = ap.parse_args()
+
+    recs: List[Dict] = []
+    errors: List[str] = []
+
+    def _extend(fn_fetch, fn_parse, label):
+        nonlocal recs
+        try:
+            html = fn_fetch()
+            recs.extend(fn_parse(html))
+        except Exception as e:
+            errors.append(f"{label} failed: {e}")
+
+    if args.source in ("auto", "irish"):
+        _extend(fetch_irish_archive, parse_irish_archive, "irishlottery.com archive")
+
+    if args.source in ("auto", "euro"):
+        for y in (2023, 2024, 2025, 2026):
+            try:
+                html = fetch_euromillions_year(y)
+                recs.extend(parse_euromillions_year(html, y))
+            except Exception as e:
+                errors.append(f"euro-millions.com {y} failed: {e}")
+
+    if args.source in ("auto", "lottery_ie"):
+        _extend(fetch_lottery_ie_recent, parse_lottery_ie_recent, "lottery.ie recent")
+
+    if not recs:
+        raise SystemExit("No records fetched.\n" + "\n".join(errors))
+
+    recs = dedupe_keep_best(recs)
+    recs = filter_year_range(recs, args.start_year, args.end_year)
+
+    if not recs:
+        raise SystemExit("No records in requested year range.")
+
+    if args.format == "csv":
+        save_csv(recs, args.out)
+    else:
+        save_json(recs, args.out)
+
+    print(f"OK: wrote {len(recs)} draws to {args.out} ({recs[0]['date']} → {recs[-1]['date']}).")
+    if errors:
+        print("Warnings:\n  " + "\n  ".join(errors))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Aborted.", file=sys.stderr)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)

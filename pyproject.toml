@@ -6,9 +6,18 @@ build-backend = "setuptools.build_meta"
 name = "lotteries"
 version = "0.1.0"
 description = "Lottery data fetch + analysis (EuroMillions / Totoloto / EuroDreams)"
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 authors = [{ name = "kugguk2022" }]
+license = { file = "LICENSE" }
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
   "requests>=2.31",
   "pandas>=2.0",
@@ -33,10 +42,18 @@ dev = [
   "mypy>=1.8",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kugguk2022/lotteries"
+Issues = "https://github.com/kugguk2022/lotteries/issues"
+Discussions = "https://github.com/kugguk2022/lotteries/discussions"
+
 [project.scripts]
 lotto-get-draws = "euromillions.get_draws:main"
 # Enable later when implemented:
 # lotto-roi = "euromillions.roi:main"
+
+[tool.setuptools.packages.find]
+include = ["euromillions", "totoloto", "eurodreams", "euromillions_agent"]
 
 [tool.ruff]
 line-length = 100

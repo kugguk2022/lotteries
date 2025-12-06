@@ -1,0 +1,14 @@
+*.pyc
+*.csv
+*.pyc
+*.pyc
+*.pyc
+*.pyc
+*.pyc
+*.pyc
+
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+lotto_lab_out/

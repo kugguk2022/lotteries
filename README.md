@@ -1,63 +1,25 @@
 # Lotteries
 
-[![CI](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml/badge.svg)](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml)
+[![CI status](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kugguk2022/lotteries/actions/workflows/ci.yml)
 
-Lottery data playground for EuroMillions, Totoloto, and EuroDreams. The goal is to collect clean datasets, explore statistical signals, and prototype ranking models. Everything here is research-focused; use it responsibly.
+Lottery data playground for EuroMillions, Totoloto, and EuroDreams. The repo ships a small typed public API plus a set of labs for modelling, bankroll experiments, and scraping. Everything is research-focused; use it responsibly.
 
-## Features
-
-- Fetch EuroMillions draws with retry, caching, deduplication, and 5s network timeouts.
-- Pandera schema keeps draw columns consistent and type-safe.
-- Existing labs (`grok.py`, `roi.py`, etc.) for experimentation with each lottery.
-- Developer tooling via `pyproject.toml`, Ruff, pytest, and optional Makefile helpers.
-
-## Project Layout
-
-```text
-lotteries/
-|-- euromillions/
-|   |-- get_draws.py        # Normalized EuroMillions fetcher (CLI entrypoint)
-|   |-- schema.py           # Pandera schema + helpers
-|   |-- grok.py             # EuroMillions modelling lab
-|   |-- roi.py              # ROI backtesting sandbox (planned)
-|-- eurodreams/             # EuroDreams analysis scripts
-|-- totoloto/               # Totoloto analysis scripts
-|-- data/                   # Local datasets (gitignored)
-|-- Makefile                # Optional developer shortcuts
-|-- pyproject.toml          # Project metadata and dependencies
-|-- requirements.txt        # Editable-install helper
-|-- README.md               # This document
-```
-
-## Getting Started
+## Quickstart
 
 ```bash
 git clone https://github.com/kugguk2022/lotteries
 cd lotteries
-
 python -m venv .venv
-# Windows
-.\.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
-
+.\.venv\Scripts\activate    # Windows
+# or: source .venv/bin/activate
 python -m pip install -U pip
 pip install -e ".[dev]"
-```
 
-### Useful Commands
+# Quality gate
+make test
 
-```bash
-# Run Ruff lint
-ruff check .
-
-# Execute tests
-pytest -q
-
-# Fetch EuroMillions draws into data/euromillions.csv
+# Fetch EuroMillions history and append to a cached CSV
 python -m euromillions.get_draws --out data/euromillions.csv --append
-# Generate candidates from history
-python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv
 ```
 
 ## EuroMillions `get_draws`
@@ -94,19 +56,6 @@ draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
 
 `euromillions/roi.py` will host walk-forward bankroll simulations, EV gating, and ticket ranking. The CLI entry point will be exposed once the module is production-ready.
 
-## EuroMillions Inference (Baseline)
-
-`euromillions/infer.py` provides a light, frequency-weighted baseline generator inspired by the original `grok.py` experiment. It reads historical draws, builds smoothed number frequencies, and samples tickets without replacement.
-
-```bash
-python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv
-```
-
-- `--history`: normalized CSV from `euromillions.get_draws`
-- `--n`: number of candidate tickets to generate (default 10)
-- `--smoothing`: additive smoothing applied to frequencies (default 1.0)
-- `--seed`: optional seed for reproducibility
-
 ## Testing
 
 Minimal smoke tests live in `tests/`. They do not require network access and focus on schema and normalization behaviour. Extend with dataset-specific fixtures as new functionality lands.
@@ -115,14 +64,22 @@ Minimal smoke tests live in `tests/`. They do not require network access and foc
 
 R notebooks and `.r` files remain for historical reference but are deprecated. Prefer the Python pipelines when adding new work.
 
-## Contributing
+## Contributing & Community
 
-Pull requests are welcome. Please keep experiments isolated, document inputs/outputs, and add unit tests when introducing new behaviours.
-
-## Disclaimer
-
-This repository is for research and education only. Lotteries remain games of chance; nothing here is financial advice.
+Open a PR or start a Discussion if you want to add new lotteries, tighten docs, or port labs. See `CONTRIBUTING.md` for “good first experiments” and documentation tasks. Please keep experiments isolated, document inputs/outputs, and add tests for new behaviours. Tag releases when milestones land so downstream users can pin versions and cite specific URIs.
 
 ## License
 
 [MIT](LICENSE)
+
+## Citation
+
+If you use this work in your research, please cite:
+```
+@software{Lotteries2025,
+  -title={Inference in European Lotteries},
+  -author={kugguk2022},
+  -year={2025},
+  -url={https://github.com/kugguk2022/lotteries}
+}
+```
