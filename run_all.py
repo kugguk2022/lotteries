@@ -50,14 +50,20 @@ LOTTERIES: List[LotteryConfig] = [
 ]
 
 
-def run_fetch(cmd: Sequence[str], *, dry_run: bool, quiet: bool) -> None:
+def run_fetch(cmd: Sequence[str], *, dry_run: bool, quiet: bool) -> bool:
     if dry_run:
         if not quiet:
             print(f"[skip fetch] {' '.join(cmd)}")
-        return
+        return True
     if not quiet:
         print(f"[fetch] {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
+        return True
+    except subprocess.CalledProcessError as exc:
+        if not quiet:
+            print(f"[warn] fetch failed ({exc}); will try to reuse existing data if present.")
+        return False
 
 
 def _counts(values: pd.Series, pop_size: int) -> np.ndarray:
@@ -215,10 +221,11 @@ def main() -> None:
         if not args.quiet:
             print(f"\n== {name.upper()} ==")
 
-        run_fetch(fetch_cmd, dry_run=args.skip_fetch, quiet=args.quiet)
-
-        if not history.exists():
-            raise SystemExit(f"Missing history file after fetch: {history}")
+        ok = run_fetch(fetch_cmd, dry_run=args.skip_fetch, quiet=args.quiet)
+        if not ok and not history.exists():
+            raise SystemExit(f"Missing history file after fetch failed: {history}")
+        if not ok and history.exists() and not args.quiet:
+            print(f"[info] using existing history at {history}")
 
         df = pd.read_csv(history)
         result = evaluate(

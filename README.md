@@ -123,6 +123,7 @@ python run_all.py --n-candidates 200 --permutation-iters 500 --smoothing 1.0
 - Fetches to `data/{lottery}.csv` by default (reuses cached files if present).
 - Writes candidates to `runs/{lottery}_candidates.csv`.
 - Prints mean scores for frequency vs random and an approximate p-value; values << 0.05 indicate the frequency sampler captures bias beyond uniform chance on the observed history (not forward-looking predictiveness).
+- If a fetch fails (network or source drift) but a local CSV already exists, it will reuse the local copy; otherwise the run stops for that lottery.
 
 ## Contributing
 - Open a PR or Discussion for new lotteries, docs, or modelling experiments.
