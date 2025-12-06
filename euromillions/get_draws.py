@@ -97,9 +97,25 @@ def fetch_raw_csv(
     candidates = urls or [PRIMARY_URL, SECONDARY_URL]
     errors: List[str] = []
 
+    def _looks_like_numeric_row(line: str) -> bool:
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        if len(parts) < 7:
+            return False
+        try:
+            for p in parts[1:]:
+                float(p)
+            return True
+        except ValueError:
+            return False
+
     def _looks_like_draw_csv(text: str) -> bool:
-        header = text.splitlines()[0].lower() if text else ""
-        return "ball1" in header or "ball 1" in header or "lucky" in header or "star" in header
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            return False
+        header = lines[0].lower()
+        if "ball1" in header or "ball 1" in header or "lucky" in header or "star" in header:
+            return True
+        return _looks_like_numeric_row(lines[0])
 
     def _looks_complete(text: str) -> bool:
         if not _looks_like_draw_csv(text):
@@ -187,6 +203,18 @@ def _lottology_rows_to_df(rows: List[EMRow]) -> pd.DataFrame:
     return _finalize_dataframe(df)
 
 
+def _normalize_headerless(csv_text: str) -> pd.DataFrame:
+    """Handle header-less CSV payloads by assigning canonical columns."""
+
+    df = pd.read_csv(StringIO(csv_text), header=None)
+    if df.shape[1] < 8:
+        raise NormalizationError(f"Headerless payload has too few columns: {df.shape[1]}")
+
+    df = df.iloc[:, :8].copy()
+    df.columns = ["draw_date", "ball_1", "ball_2", "ball_3", "ball_4", "ball_5", "star_1", "star_2"]
+    return _finalize_dataframe(df)
+
+
 def normalize(csv_text: str) -> pd.DataFrame:
     try:
         df = pd.read_csv(StringIO(csv_text))
@@ -225,7 +253,8 @@ def normalize(csv_text: str) -> pd.DataFrame:
     keep = ["draw_date", "ball_1", "ball_2", "ball_3", "ball_4", "ball_5", "star_1", "star_2"]
     missing = [col for col in keep if col not in df.columns]
     if missing:
-        raise NormalizationError(f"Missing expected columns after rename: {missing}")
+        # Retry assuming header-less numeric payload
+        return _normalize_headerless(csv_text)
     df = df[keep]
 
     return _finalize_dataframe(df)
@@ -309,6 +338,17 @@ def _fetch_lottology_source(
     return FetchResult(raw_csv=raw_csv, dataframe=dataframe, cache_path=cache_path)
 
 
+def _load_existing(path: Path, out_path: Path | None = None) -> FetchResult:
+    """Load an already-normalized CSV and return a FetchResult."""
+
+    df = pd.read_csv(path, parse_dates=["draw_date"])
+    df = _finalize_dataframe(df)
+    raw_csv = df.to_csv(index=False)
+    if out_path and out_path != path:
+        write_csv(df, out_path, append=False)
+    return FetchResult(raw_csv=raw_csv, dataframe=df, cache_path=path)
+
+
 def fetch_and_normalize(
     *,
     date_from: str | None = None,
@@ -320,6 +360,8 @@ def fetch_and_normalize(
     use_cache: bool = True,
     allow_partial: bool = False,
     source: str = "auto",
+    allow_stale: bool = False,
+    sample_path: Path | None = None,
 ) -> FetchResult:
     """High-level helper used by the CLI and tests."""
 
@@ -371,6 +413,20 @@ def fetch_and_normalize(
             errors.append(f"{candidate}: {exc}")
             continue
 
+    if allow_stale:
+        fallbacks: List[Path] = []
+        if out_path and out_path.exists():
+            fallbacks.append(out_path)
+        default_sample = sample_path or Path("data/examples/euromillions_sample.csv")
+        if default_sample.exists():
+            fallbacks.append(default_sample)
+
+        for path in fallbacks:
+            try:
+                return _load_existing(path, out_path=out_path)
+            except Exception as exc:
+                errors.append(f"fallback {path}: {exc}")
+
     raise FetchError("Failed to fetch EuroMillions CSV; attempts: " + "; ".join(errors))
 
 
@@ -398,6 +454,11 @@ def main() -> None:
         help="Allow truncated datasets if full history is unavailable",
     )
     parser.add_argument(
+        "--allow-stale",
+        action="store_true",
+        help="If all sources fail, reuse existing --out file or bundled sample data if available.",
+    )
+    parser.add_argument(
         "--source",
         choices=SOURCE_CHOICES,
         default="auto",
@@ -414,6 +475,7 @@ def main() -> None:
         use_cache=args.use_cache,
         allow_partial=args.allow_partial,
         source=args.source,
+        allow_stale=args.allow_stale,
     )
 
     if not args.quiet:

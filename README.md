@@ -42,6 +42,8 @@ Fetches historical EuroMillions draws from the MerseyWorld CSV endpoint, caches 
 ```bash
 python -m euromillions.get_draws --out data/euromillions.csv --append
 python -m euromillions.get_draws --from 2023-01-01 --to 2024-12-31 --out data/euromillions_2023_2024.csv
+# If sources are flaky, reuse local data instead of failing
+python -m euromillions.get_draws --out data/euromillions.csv --allow-stale
 ```
 
 ### Sample CSV Output
@@ -62,6 +64,10 @@ draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
 ### Validation
 
 `euromillions/schema.py` enforces the canonical column set, coerces `draw_date` to timezone-naive timestamps, and checks ranges (1-50 for balls, 1-12 for stars). Tests cover both the schema and CSV normalization pipeline.
+
+Resilience notes:
+- Fetcher accepts header-less CSV payloads and trims malformed source headers.
+- `--allow-stale` reuses an existing `--out` file or the bundled `data/examples/euromillions_sample.csv` when all network sources fail.
 
 ## EuroMillions Inference (Baseline)
 

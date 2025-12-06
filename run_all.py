@@ -24,6 +24,7 @@ LOTTERIES: List[LotteryConfig] = [
             "--out",
             "data/euromillions.csv",
             "--append",
+            "--allow-stale",
         ],
         "main_cols": ["ball_1", "ball_2", "ball_3", "ball_4", "ball_5"],
         "bonus_cols": ["star_1", "star_2"],
