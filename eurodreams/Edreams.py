@@ -12,21 +12,26 @@ import pandas as pd
 def load_data(path: Path) -> pd.DataFrame:
     """Load draws and ensure the first 7 columns are numeric."""
 
-    try_paths = [path, Path("data/eurodreams.csv"), Path("data/eurodreams_draws_2023_to_2025.csv")]
+    try_paths = [
+        path,
+        Path("data/eurodreams.csv"),
+        Path("data/eurodreams_draws_2023_to_2025.csv"),
+        Path("data/examples/eurodreams_sample.csv"),
+    ]
     df = None
     for p in try_paths:
         if p.exists():
             df = pd.read_csv(p)
             break
     if df is None:
-        raise FileNotFoundError(f"Could not find EuroDreams data at {try_paths}")
+        raise FileNotFoundError(f"Could not find EuroDreams data at any of: {try_paths}")
 
     # Keep first 7 columns; coerce to numeric and drop invalid rows.
     numeric_cols = df.columns[:7]
     df = df.loc[:, numeric_cols].apply(pd.to_numeric, errors="coerce")
     df = df.dropna(subset=numeric_cols).reset_index(drop=True)
     if df.empty:
-        raise ValueError("No valid numeric rows after cleaning the input data.")
+        raise ValueError(f"No valid numeric rows after cleaning the input data from {p}")
     return df
 
 
