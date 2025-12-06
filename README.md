@@ -56,6 +56,8 @@ pytest -q
 
 # Fetch EuroMillions draws into data/euromillions.csv
 python -m euromillions.get_draws --out data/euromillions.csv --append
+# Generate candidates from history
+python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv
 ```
 
 ## EuroMillions `get_draws`
@@ -91,6 +93,19 @@ draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
 **Not implemented yet -- CLI will error if run.**
 
 `euromillions/roi.py` will host walk-forward bankroll simulations, EV gating, and ticket ranking. The CLI entry point will be exposed once the module is production-ready.
+
+## EuroMillions Inference (Baseline)
+
+`euromillions/infer.py` provides a light, frequency-weighted baseline generator inspired by the original `grok.py` experiment. It reads historical draws, builds smoothed number frequencies, and samples tickets without replacement.
+
+```bash
+python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/euromillions_candidates.csv
+```
+
+- `--history`: normalized CSV from `euromillions.get_draws`
+- `--n`: number of candidate tickets to generate (default 10)
+- `--smoothing`: additive smoothing applied to frequencies (default 1.0)
+- `--seed`: optional seed for reproducibility
 
 ## Testing
 
