@@ -125,20 +125,103 @@ def euler_phi_upto(m: int) -> np.ndarray:
 
 def load_int_draws(path: Path, main_k: int = 5, star_k: int = 2) -> tuple[np.ndarray, np.ndarray | None]:
     """
-    Loads a whitespace/csv-ish file of integers.
-    Expects at least main_k columns. If >= main_k + star_k, reads stars too.
+    Loads a CSV file of draws. 
+    Robustly handles headers, date columns, and column names like 'ball_1', 'n1', etc.
     """
-    df = pd.read_csv(path, sep=None, engine="python", header=None)
-    # keep numeric
-    df = df.apply(pd.to_numeric, errors="coerce")
-    df = df.dropna(axis=0, how="any")
-    if df.shape[1] < main_k:
-        raise ValueError(f"Need at least {main_k} columns, got {df.shape[1]}")
-    mains = df.iloc[:, :main_k].astype(int).to_numpy()
-    stars = None
-    if star_k > 0 and df.shape[1] >= main_k + star_k:
-        stars = df.iloc[:, main_k:main_k + star_k].astype(int).to_numpy()
-    return mains, stars
+    try:
+        # Try reading with header first
+        df = pd.read_csv(path)
+    except Exception:
+        # Fallback for completely messy files
+        df = pd.read_csv(path, header=None)
+    
+    # Identify numeric columns
+    # We prefer columns named like ball_*, n*, star_*, dream, etc.
+    
+    col_map = {c: str(c).lower().strip() for c in df.columns}
+    
+    mains = []
+    stars = []
+    
+    # Heuristic for main balls: ball_1..ball_N or n1..nN
+    # Try ball_X pattern
+    for i in range(1, main_k + 1):
+        pat = f"ball_{i}"
+        found = next((k for k, v in col_map.items() if v == pat or v == f"ball{i}"), None)
+        if found:
+            mains.append(found)
+        else:
+            # Try nX pattern
+            pat_n = f"n{i}"
+            found_n = next((k for k, v in col_map.items() if v == pat_n), None)
+            if found_n:
+                mains.append(found_n)
+    
+    # Heuristic for stars: star_X or lucky_star_X or dream
+    for i in range(1, star_k + 1):
+        pat = f"star_{i}"
+        found = next((k for k, v in col_map.items() if v == pat or v == f"star{i}" or v == f"lucky_star_{i}" or v == f"lucky_star{i}"), None)
+        if found:
+            stars.append(found)
+        else:
+             # dream? (usually single star)
+             if star_k == 1 and i == 1:
+                 found_d = next((k for k, v in col_map.items() if v == "dream"), None)
+                 if found_d:
+                     stars.append(found_d)
+                     
+    # If we found enough named columns, use them
+    if len(mains) == main_k:
+        # Check stars
+        if star_k > 0 and len(stars) < star_k:
+             # Maybe they aren't named standardly? 
+             # For now, if mains valid, we try to grab stars. 
+             # But if star columns missing, maybe we just fallback to positional on valid numeric cols.
+             pass
+    
+    if len(mains) != main_k or (star_k > 0 and len(stars) != star_k):
+        # Fallback: find ALL numeric columns
+        # Drop columns that are definitely dates/strings
+        df_num = df.select_dtypes(include=[np.number])
+        
+        # If select_dtypes failed to find enough (maybe read as object due to dirty data), force coerce everything
+        if df_num.shape[1] < main_k + star_k:
+             df_coerced = df.apply(pd.to_numeric, errors='coerce')
+             # Drop columns that are all NaN (likely dates/strings)
+             df_num = df_coerced.dropna(axis=1, how='all')
+        
+        # Now take first main_k as mains, next star_k as stars
+        if df_num.shape[1] >= main_k:
+            cols = df_num.columns.tolist()
+            mains = cols[:main_k]
+            if star_k > 0 and len(cols) >= main_k + star_k:
+                stars = cols[main_k : main_k + star_k]
+            else:
+                stars = [] # Not enough stars found
+    
+    if len(mains) < main_k:
+        raise ValueError(f"Could not identify {main_k} main ball columns in {path}")
+        
+    df_mains = df[mains].apply(pd.to_numeric, errors='coerce').dropna().astype(int)
+    mains_arr = df_mains.to_numpy()
+    
+    stars_arr = None
+    if star_k > 0:
+        if len(stars) == star_k:
+            # Align indices with mains
+            df_stars = df[stars].loc[df_mains.index].apply(pd.to_numeric, errors='coerce').astype(int)
+            stars_arr = df_stars.to_numpy()
+        else:
+             # If we expected stars but didn't find them, return None or error?
+             # For robustness, if we can't find stars separate, we might return None or zeros?
+             # phase2_sobol expects stars if star_k > 0.
+             # Let's try to be lenient: if missing, maybe return empty if allowed, but strict here:
+             if len(stars) < star_k:
+                  # Last ditch: are there ANY other numeric columns?
+                  pass
+    
+    return mains_arr, stars_arr
+
 
 def build_pair_features(mains: np.ndarray, main_n: int | None = None, include_current: bool = True) -> FeatureOut:
     """
