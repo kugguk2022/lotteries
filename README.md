@@ -29,11 +29,12 @@ python run_all.py --n-candidates 200
 ```
 
 ## Use Cases
+
 - Keep a validated EuroMillions history CSV up to date with retry/caching.
 - Inspect number/“lucky star” distributions for quick EDA.
 - Generate baseline candidate tickets using smoothed frequency sampling.
 - Extend the labs (`grok.py`, `roi.py`) for custom modelling experiments.
- - Fetch and benchmark Totoloto and EuroDreams datasets alongside EuroMillions.
+- Fetch and benchmark Totoloto and EuroDreams datasets alongside EuroMillions.
 
 ## EuroMillions `get_draws`
 
@@ -66,6 +67,7 @@ draw_date,ball_1,ball_2,ball_3,ball_4,ball_5,star_1,star_2
 `euromillions/schema.py` enforces the canonical column set, coerces `draw_date` to timezone-naive timestamps, and checks ranges (1-50 for balls, 1-12 for stars). Tests cover both the schema and CSV normalization pipeline.
 
 Resilience notes:
+
 - Fetcher accepts header-less CSV payloads and trims malformed source headers.
 - `--allow-stale` reuses (in order) an existing `--out` file, the bundled `euromillions/euromillions_2016_2025.csv`, or the tiny sample `data/examples/euromillions_sample.csv` when all network sources fail.
 
@@ -132,6 +134,7 @@ python run_all.py --n-candidates 200 --permutation-iters 500 --smoothing 1.0
 - If a fetch fails (network or source drift) but a local CSV already exists, it will reuse the local copy; otherwise the run stops for that lottery.
 
 ## Contributing
+
 - Open a PR or Discussion for new lotteries, docs, or modelling experiments.
 - Keep experiments isolated, document inputs/outputs, and add tests for new behaviours.
 - Tag releases when milestones land so downstream users can pin versions.
@@ -139,3 +142,51 @@ python run_all.py --n-candidates 200 --permutation-iters 500 --smoothing 1.0
 ## License
 
 [MIT](LICENSE)
+
+## Architecture & Logic
+
+The repository implements a multi-stage pipeline for lottery analysis, capable of running end-to-end for EuroMillions, and partially for others.
+
+### The Pipeline Steps
+
+1.  **Fetch (`get_draws`)**: Downloads historical draw data from various online sources, normalizes it, and saves it to a CSV file. It supports caching and fallbacks to local data if the network or source is unavailable.
+2.  **Lotto Lab (`lottolab.py`)** _(EuroMillions only)_: A comprehensive research lab that runs an "Agent" (forecaster), a "Discriminator" (pair co-occurrence), a "Grok" model (tiny transformer), and an RL Mixer. It produces detailed analysis and plots.
+3.  **Features (`phase2_sobol.py`)**: Extracts advanced features from the draw history, specifically calculating "Point of Interest" (POI) metrics based on pair co-occurrences and time-based features (Euler phi).
+4.  **Grok (`grok.py`)**: Trains a dual-input Transformer model on the extracted features (`g` sequence vs `poi` sequence) to learn patterns and predict future "interest" scores.
+5.  **Tickets (`phase2_sobol.py`)**: Generates candidate tickets using Sobol low-discrepancy sequences combined with combinadic unranking. This ensures tickets cover the combinations space more evenly than random sampling.
+6.  **Infer (`infer.py`)**: A baseline generator that creates tickets based on simple frequency-weighted sampling of historical draws.
+
+### Quickstart Batch Scripts
+
+We provide one-click batch scripts for Windows to run the entire pipeline for each lottery.
+
+#### EuroMillions
+
+Runs the full 6-stage pipeline.
+
+```cmd
+start_euromillions.bat
+```
+
+_Outputs:_ `outputs/euromillions/`
+
+#### Totoloto
+
+Runs a 5-stage pipeline (skips `lottolab`).
+
+```cmd
+start_totoloto.bat
+```
+
+_Outputs:_ `outputs/totoloto/`
+
+#### EuroDreams
+
+Runs Fetch and Infer stages.
+_Note: Advanced Sobol/Grok stages are currently skipped due to 6-ball incompatibility._
+
+```cmd
+start_eurodreams.bat
+```
+
+_Outputs:_ `outputs/eurodreams/`
