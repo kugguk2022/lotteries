@@ -133,16 +133,6 @@ python run_all.py --n-candidates 200 --permutation-iters 500 --smoothing 1.0
 - Prints mean scores for frequency vs random and an approximate p-value; values << 0.05 indicate the frequency sampler captures bias beyond uniform chance on the observed history (not forward-looking predictiveness).
 - If a fetch fails (network or source drift) but a local CSV already exists, it will reuse the local copy; otherwise the run stops for that lottery.
 
-## Contributing
-
-- Open a PR or Discussion for new lotteries, docs, or modelling experiments.
-- Keep experiments isolated, document inputs/outputs, and add tests for new behaviours.
-- Tag releases when milestones land so downstream users can pin versions.
-
-## License
-
-[MIT](LICENSE)
-
 ## Architecture & Logic
 
 The repository implements a multi-stage pipeline for lottery analysis, capable of running end-to-end for EuroMillions, and partially for others.
@@ -190,3 +180,13 @@ start_eurodreams.bat
 ```
 
 _Outputs:_ `outputs/eurodreams/`
+
+## Contributing
+
+- Open a PR or Discussion for new lotteries, docs, or modelling experiments.
+- Keep experiments isolated, document inputs/outputs, and add tests for new behaviours.
+- Tag releases when milestones land so downstream users can pin versions.
+
+## License
+
+[MIT](LICENSE)
