@@ -258,6 +258,8 @@ def _load_existing(path: str) -> List[Dict]:
     return rows
 
 
+import traceback
+
 def _validate_structured_rows(rows: List[Dict]) -> List[Dict]:
     out: List[Dict] = []
     for r in rows:
@@ -267,7 +269,6 @@ def _validate_structured_rows(rows: List[Dict]) -> List[Dict]:
         if "date" in r:
             mapped["date"] = r["date"]
         elif "draw_date" in r:
-            # Maybe parse date if needed? For now assume iso or handle later
             mapped["date"] = r["draw_date"]
         
         # Balls
@@ -279,31 +280,41 @@ def _validate_structured_rows(rows: List[Dict]) -> List[Dict]:
             elif k_alt in r:
                 mapped[k_std] = r[k_alt]
         
+        # Handle the weird fallback case where header is ball_1..5, star_1, star_2
+        if "n6" not in mapped:
+             if "star_1" in r:
+                 # Assume this is actually ball 6
+                 mapped["n6"] = r["star_1"]
+        
         # Dream
         if "dream" in r:
             mapped["dream"] = r["dream"]
-        elif "star_1" in r:
+        elif "star_2" in r and "n6" in mapped and mapped["n6"] == r.get("star_1"):
+             # If we used star_1 as n6, star_2 is likely dream
+             mapped["dream"] = r["star_2"]
+        elif "star_1" in r and "n6" in mapped and mapped["n6"] != r["star_1"]:
+             # regular case?
              mapped["dream"] = r["star_1"]
         elif "bonus" in r:
              mapped["dream"] = r["bonus"]
              
         # Check required
         if not {"date", "n1", "n2", "n3", "n4", "n5", "n6", "dream"}.issubset(mapped.keys()):
+            # print(f"Skipping row missing keys: {mapped.keys()} vs required. Orig: {r}")
             continue
             
         try:
-             # Handle potential non-iso dates like 1/12/2025 -> 2025-12-01? 
-             # Or assume simple pass-through. The script expects ISO for sorting.
-             # If format is D/M/Y, we might need to fix it.
+             # Fix date format D/M/Y -> YYYY-MM-DD
              d_str = mapped["date"]
              if "/" in d_str:
-                 parts = d_str.split("/")
-                 if len(parts) == 3:
-                     # heuristic: if part[0] > 12 likely YMD, else DMY?
-                     # Standard euromillions.csv (repo default) usually YYYY-MM-DD. 
-                     # The snippet showed '1/12/2025'. Assuming D/M/Y or M/D/Y.
-                     # Quick fix: leave as is, but if sorting fails later, that's why.
-                     # actually, let's try to convert to iso if possible using standard lib
+                 try:
+                     parts = d_str.split("/")
+                     if len(parts) == 3:
+                         # assume D/M/Y if part[0] <= 31
+                         d, m, y = map(int, parts)
+                         d_iso = dt.date(y, m, d).isoformat()
+                         mapped["date"] = d_iso
+                 except:
                      pass
 
              rec = {
@@ -478,4 +489,5 @@ if __name__ == "__main__":
         print("Aborted.", file=sys.stderr)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
+        traceback.print_exc()
         sys.exit(1)
