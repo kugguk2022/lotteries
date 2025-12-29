@@ -349,7 +349,9 @@ def main():
         _extend(fetch_irish_archive, parse_irish_archive, "irishlottery.com archive")
 
     if args.source in ("auto", "euro"):
-        for y in (2023, 2024, 2025, 2026):
+        current_year = dt.date.today().year
+        # Check from 2023 up to current year (inclusive)
+        for y in range(2023, current_year + 1):
             try:
                 html = fetch_euromillions_year(y)
                 recs.extend(parse_euromillions_year(html, y))
