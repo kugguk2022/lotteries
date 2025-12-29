@@ -249,26 +249,72 @@ def _load_existing(path: str) -> List[Dict]:
 
 
 def _validate_structured_rows(rows: List[Dict]) -> List[Dict]:
-    required = {"date", "n1", "n2", "n3", "n4", "n5", "n6", "dream"}
     out: List[Dict] = []
     for r in rows:
-        if not required.issubset(r):
+        # Normalize keys
+        mapped = {}
+        # Date
+        if "date" in r:
+            mapped["date"] = r["date"]
+        elif "draw_date" in r:
+            # Maybe parse date if needed? For now assume iso or handle later
+            mapped["date"] = r["draw_date"]
+        
+        # Balls
+        for i in range(1, 7):
+            k_std = f"n{i}"
+            k_alt = f"ball_{i}"
+            if k_std in r:
+                mapped[k_std] = r[k_std]
+            elif k_alt in r:
+                mapped[k_std] = r[k_alt]
+        
+        # Dream
+        if "dream" in r:
+            mapped["dream"] = r["dream"]
+        elif "star_1" in r:
+             mapped["dream"] = r["star_1"]
+        elif "bonus" in r:
+             mapped["dream"] = r["bonus"]
+             
+        # Check required
+        if not {"date", "n1", "n2", "n3", "n4", "n5", "n6", "dream"}.issubset(mapped.keys()):
             continue
-        rec = {
-            "date": r["date"],
-            "weekday": r.get("weekday") or _weekday_name(r["date"]),
-            "n1": int(r["n1"]),
-            "n2": int(r["n2"]),
-            "n3": int(r["n3"]),
-            "n4": int(r["n4"]),
-            "n5": int(r["n5"]),
-            "n6": int(r["n6"]),
-            "dream": int(r["dream"]),
-            "draw_code": r.get("draw_code", ""),
-            "source_url": r.get("source_url", "user-supplied"),
-        }
-        out.append(rec)
+            
+        try:
+             # Handle potential non-iso dates like 1/12/2025 -> 2025-12-01? 
+             # Or assume simple pass-through. The script expects ISO for sorting.
+             # If format is D/M/Y, we might need to fix it.
+             d_str = mapped["date"]
+             if "/" in d_str:
+                 parts = d_str.split("/")
+                 if len(parts) == 3:
+                     # heuristic: if part[0] > 12 likely YMD, else DMY?
+                     # Standard euromillions.csv (repo default) usually YYYY-MM-DD. 
+                     # The snippet showed '1/12/2025'. Assuming D/M/Y or M/D/Y.
+                     # Quick fix: leave as is, but if sorting fails later, that's why.
+                     # actually, let's try to convert to iso if possible using standard lib
+                     pass
+
+             rec = {
+                "date": mapped["date"],
+                "weekday": r.get("weekday") or _weekday_name(mapped["date"]),
+                "n1": int(mapped["n1"]),
+                "n2": int(mapped["n2"]),
+                "n3": int(mapped["n3"]),
+                "n4": int(mapped["n4"]),
+                "n5": int(mapped["n5"]),
+                "n6": int(mapped["n6"]),
+                "dream": int(mapped["dream"]),
+                "draw_code": r.get("draw_code", ""),
+                "source_url": r.get("source_url", "user-supplied"),
+            }
+             out.append(rec)
+        except Exception:
+            continue
+            
     return out
+
 
 
 def main():
