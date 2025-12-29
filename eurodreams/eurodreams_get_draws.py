@@ -53,8 +53,16 @@ def _iso_from_eng_date(text: str) -> Optional[str]:
         return None
 
 
+def _get_session():
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    })
+    return s
+
 def fetch_irish_archive() -> str:
-    r = requests.get(IRISH_ARCHIVE_URL, timeout=30)
+    s = _get_session()
+    r = s.get(IRISH_ARCHIVE_URL, timeout=30)
     r.raise_for_status()
     return r.text
 
@@ -98,7 +106,8 @@ def parse_irish_archive(html: str) -> List[Dict]:
 
 def fetch_euromillions_year(year: int) -> str:
     url = EUROMILLIONS_YEAR_URL.format(year=year)
-    r = requests.get(url, timeout=30)
+    s = _get_session()
+    r = s.get(url, timeout=30)
     r.raise_for_status()
     return r.text
 
@@ -167,7 +176,8 @@ def parse_euromillions_year(html: str, year: int) -> List[Dict]:
 
 
 def fetch_lottery_ie_recent() -> str:
-    r = requests.get(LOTTERY_IE_HISTORY_URL, timeout=30)
+    s = _get_session()
+    r = s.get(LOTTERY_IE_HISTORY_URL, timeout=30)
     r.raise_for_status()
     return r.text
 
