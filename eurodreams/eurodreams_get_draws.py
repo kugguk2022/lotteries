@@ -364,8 +364,10 @@ def main():
         fallback_candidates = [
             Path(args.out),
             Path("data/eurodreams.csv"),
+            Path("data/eurodreams_draws_2023_to_2025.csv"),
             Path("data/examples/eurodreams_sample.csv"),
             repo_root / "data/eurodreams.csv",
+            repo_root / "data/eurodreams_draws_2023_to_2025.csv",
             repo_root / "data/examples/eurodreams_sample.csv",
         ]
         seen = set()
