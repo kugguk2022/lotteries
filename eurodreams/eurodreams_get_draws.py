@@ -435,7 +435,7 @@ def main():
         for path in uniq_paths:
             if path.exists():
                 try:
-                    recs = _load_existing(str(path))
+                    recs = _validate_structured_rows(_load_existing(str(path)))
                     errors.append(f"used fallback {path}")
                     break
                 except Exception as e:  # pragma: no cover - fallback path
