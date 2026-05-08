@@ -24,6 +24,11 @@ try:
 except Exception:  # pragma: no cover - environment fallback
     Workbook = None
 
+try:
+    import xlsxwriter
+except Exception:  # pragma: no cover - environment fallback
+    xlsxwriter = None
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HISTORY = REPO_ROOT / "data" / "euromillions.csv"
 DEFAULT_OUT_DIR = REPO_ROOT / "outputs" / "euromillions" / "diagnostics3"
@@ -609,11 +614,18 @@ def shortlist_matches(matches: pd.DataFrame, top_n: int, *, likely: bool) -> pd.
 def prepare_excel_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df.copy()
-    out = df.copy()
-    for column in out.columns:
-        if np.issubdtype(out[column].dtype, np.datetime64):
+    out = df
+    copied = False
+    for column in df.columns:
+        if np.issubdtype(df[column].dtype, np.datetime64):
+            if not copied:
+                out = df.copy()
+                copied = True
             out[column] = out[column].dt.strftime("%Y-%m-%d")
-        elif out[column].dtype == object:
+        elif df[column].dtype == object:
+            if not copied:
+                out = df.copy()
+                copied = True
             out[column] = out[column].map(
                 lambda value: json.dumps(value)
                 if isinstance(value, (list, tuple, dict))
@@ -623,8 +635,27 @@ def prepare_excel_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def write_excel_workbook(out_path: Path, sheets: list[tuple[str, pd.DataFrame]]) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if xlsxwriter is not None:
+        workbook = xlsxwriter.Workbook(str(out_path), {"constant_memory": True})
+        try:
+            for sheet_name, frame in sheets:
+                excel_frame = prepare_excel_frame(frame)
+                if len(excel_frame) + 1 > EXCEL_MAX_ROWS:
+                    raise ValueError(
+                        f"Sheet '{sheet_name}' has {len(excel_frame)} data rows which exceeds the Excel limit."
+                    )
+
+                worksheet = workbook.add_worksheet(sheet_name[:31])
+                worksheet.write_row(0, 0, list(excel_frame.columns))
+                for row_idx, row in enumerate(excel_frame.itertuples(index=False, name=None), start=1):
+                    worksheet.write_row(row_idx, 0, row)
+        finally:
+            workbook.close()
+        return
+
     if Workbook is None:
-        raise RuntimeError("openpyxl is required to write the Excel workbook.")
+        raise RuntimeError("Neither xlsxwriter nor openpyxl is available to write the Excel workbook.")
 
     workbook = Workbook(write_only=True)
     for sheet_name, frame in sheets:
@@ -638,8 +669,6 @@ def write_excel_workbook(out_path: Path, sheets: list[tuple[str, pd.DataFrame]])
         worksheet.append(list(excel_frame.columns))
         for row in excel_frame.itertuples(index=False, name=None):
             worksheet.append(list(row))
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(out_path)
 
 
