@@ -27,13 +27,15 @@
   "predicted_growth_n1": -311.25367672892526,
   "reverse_growth_target_score": 920,
   "reverse_growth_target_value": 920.0764226347544,
+  "reverse_growth_effective_score": 709,
+  "reverse_growth_score_gap": 211,
   "trailing_window_r_compatible": 6,
   "trailing_mean_r_compatible": 535.3333333333334,
   "trailing_mean_last_5": 544.2,
   "target_score_r_compatible": 535,
   "matching_guess_count": 1042347,
   "total_combinations_scored": 139838160,
-  "reverse_growth_match_count": 0,
+  "reverse_growth_match_count": 1,
   "least_likely_main_pair": [
     9,
     22

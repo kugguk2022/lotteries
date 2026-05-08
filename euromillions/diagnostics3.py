@@ -68,6 +68,8 @@ class Diagnostics3Summary:
     predicted_growth_n1: float
     reverse_growth_target_score: int
     reverse_growth_target_value: float
+    reverse_growth_effective_score: int
+    reverse_growth_score_gap: int
     trailing_window_r_compatible: int
     trailing_mean_r_compatible: float
     trailing_mean_last_5: float
@@ -534,6 +536,158 @@ def find_matching_full7_guesses(
     ), total
 
 
+def find_nearest_main5_guesses(
+    pair_counts: np.ndarray,
+    *,
+    main_n: int,
+    target_score: int,
+    batch_size: int,
+) -> tuple[pd.DataFrame, int]:
+    combo_iter = combinations(range(1, main_n + 1), 5)
+    best_gap: int | None = None
+    matched_frames: list[pd.DataFrame] = []
+    total = 0
+
+    while True:
+        batch = list(islice(combo_iter, batch_size))
+        if not batch:
+            break
+
+        combos = np.asarray(batch, dtype=np.int16)
+        scores = score_batch(pair_counts, combos)
+        gaps = np.abs(scores - target_score)
+        local_gap = int(gaps.min())
+        start_index = total + 1
+        total += len(combos)
+
+        if best_gap is None or local_gap < best_gap:
+            best_gap = local_gap
+            matched_frames = []
+
+        if local_gap != best_gap:
+            continue
+
+        hit_mask = gaps == best_gap
+        matched = combos[hit_mask]
+        matched_scores = scores[hit_mask]
+        matched_gaps = gaps[hit_mask]
+        matched_positions = np.flatnonzero(hit_mask) + start_index
+        matched_frames.append(
+            pd.DataFrame(
+                {
+                    "combination_index": matched_positions.astype(np.int64),
+                    "ball_1": matched[:, 0].astype(int),
+                    "ball_2": matched[:, 1].astype(int),
+                    "ball_3": matched[:, 2].astype(int),
+                    "ball_4": matched[:, 3].astype(int),
+                    "ball_5": matched[:, 4].astype(int),
+                    "score": matched_scores.astype(int),
+                    "score_gap": matched_gaps.astype(int),
+                }
+            )
+        )
+
+    if matched_frames:
+        return pd.concat(matched_frames, ignore_index=True), int(best_gap or 0)
+    return pd.DataFrame(
+        columns=["combination_index", "ball_1", "ball_2", "ball_3", "ball_4", "ball_5", "score", "score_gap"]
+    ), -1
+
+
+def find_nearest_full7_guesses(
+    pair_counts: np.ndarray,
+    *,
+    main_n: int,
+    star_n: int,
+    target_score: int,
+    batch_size: int,
+) -> tuple[pd.DataFrame, int]:
+    main_iter = combinations(range(1, main_n + 1), 5)
+    star_slots = np.arange(main_n + 1, main_n + star_n + 1, dtype=np.int16)
+    star_pair_idx = np.asarray(list(combinations(range(star_n), 2)), dtype=np.int16)
+    star_encoded = star_slots[star_pair_idx]
+    star_display = star_pair_idx + 1
+    star_scores = pair_counts[star_encoded[:, 0], star_encoded[:, 1]].astype(int)
+    tickets_per_main = len(star_pair_idx)
+
+    best_gap: int | None = None
+    matched_frames: list[pd.DataFrame] = []
+    processed_mains = 0
+
+    while True:
+        batch = list(islice(main_iter, batch_size))
+        if not batch:
+            break
+
+        mains = np.asarray(batch, dtype=np.int16)
+        main_scores = score_batch(pair_counts, mains)
+        main_star_sum = pair_counts[mains[:, :, None], star_slots[None, None, :]].sum(axis=1).astype(int)
+
+        for star_pos, (star_left_idx, star_right_idx) in enumerate(star_pair_idx):
+            total_scores = (
+                main_scores
+                + star_scores[star_pos]
+                + main_star_sum[:, star_left_idx]
+                + main_star_sum[:, star_right_idx]
+            )
+            gaps = np.abs(total_scores - target_score)
+            local_gap = int(gaps.min())
+
+            if best_gap is None or local_gap < best_gap:
+                best_gap = local_gap
+                matched_frames = []
+
+            if local_gap != best_gap:
+                continue
+
+            hit_mask = gaps == best_gap
+            if not np.any(hit_mask):
+                continue
+
+            hit_positions = np.flatnonzero(hit_mask)
+            combo_indices = (
+                (processed_mains + hit_positions).astype(np.int64) * tickets_per_main
+                + int(star_pos)
+                + 1
+            )
+            matched_mains = mains[hit_mask]
+            matched_frames.append(
+                pd.DataFrame(
+                    {
+                        "combination_index": combo_indices,
+                        "ball_1": matched_mains[:, 0].astype(int),
+                        "ball_2": matched_mains[:, 1].astype(int),
+                        "ball_3": matched_mains[:, 2].astype(int),
+                        "ball_4": matched_mains[:, 3].astype(int),
+                        "ball_5": matched_mains[:, 4].astype(int),
+                        "star_1": np.full(hit_positions.shape, int(star_display[star_pos, 0]), dtype=int),
+                        "star_2": np.full(hit_positions.shape, int(star_display[star_pos, 1]), dtype=int),
+                        "score": total_scores[hit_mask].astype(int),
+                        "score_gap": gaps[hit_mask].astype(int),
+                    }
+                )
+            )
+
+        processed_mains += len(mains)
+
+    if matched_frames:
+        return pd.concat(matched_frames, ignore_index=True), int(best_gap or 0)
+    return pd.DataFrame(
+        columns=[
+            "combination_index",
+            "ball_1",
+            "ball_2",
+            "ball_3",
+            "ball_4",
+            "ball_5",
+            "star_1",
+            "star_2",
+            "score",
+            "score_gap",
+        ]
+    ), -1
+
+
 def annotate_match_statistics(matches: pd.DataFrame, pair_diag: PairZDiagnostics) -> pd.DataFrame:
     if matches.empty:
         return matches.copy()
@@ -911,6 +1065,16 @@ def main() -> None:
             target_score=reverse_growth_target_score,
             batch_size=args.batch_size,
         )
+        if reverse_matches.empty:
+            reverse_matches, reverse_gap = find_nearest_full7_guesses(
+                features.pair_counts,
+                main_n=main_n,
+                star_n=star_n,
+                target_score=reverse_growth_target_score,
+                batch_size=args.batch_size,
+            )
+        else:
+            reverse_gap = 0
     else:
         matches, total_scored = find_matching_guesses(
             features.pair_counts,
@@ -924,6 +1088,15 @@ def main() -> None:
             target_score=reverse_growth_target_score,
             batch_size=args.batch_size,
         )
+        if reverse_matches.empty:
+            reverse_matches, reverse_gap = find_nearest_main5_guesses(
+                features.pair_counts,
+                main_n=main_n,
+                target_score=reverse_growth_target_score,
+                batch_size=args.batch_size,
+            )
+        else:
+            reverse_gap = 0
 
     matches = annotate_match_statistics(matches, pair_diag)
     reverse_matches = annotate_match_statistics(reverse_matches, pair_diag)
@@ -933,14 +1106,17 @@ def main() -> None:
     pair_diag.top_abs_pairs.to_csv(out_dir / "diagnostics3_main_pair_zscores.csv", index=False)
 
     least_pair_shortlist = shortlist_matches(matches, args.excel_top_n, likely=False)
-    if reverse_matches.empty:
-        super_likely_shortlist = shortlist_matches(matches, args.excel_top_n, likely=True)
-        super_likely_shortlist["selection_source"] = "growth_target_fallback"
-        super_likely_shortlist["target_score_used"] = target_score
-    else:
-        super_likely_shortlist = shortlist_matches(reverse_matches, args.excel_top_n, likely=True)
-        super_likely_shortlist["selection_source"] = "reverse_growth_exact"
-        super_likely_shortlist["target_score_used"] = reverse_growth_target_score
+    super_likely_shortlist = shortlist_matches(reverse_matches, args.excel_top_n, likely=True)
+    reverse_effective_score = (
+        int(super_likely_shortlist["score"].iloc[0])
+        if not super_likely_shortlist.empty
+        else reverse_growth_target_score
+    )
+    super_likely_shortlist["selection_source"] = (
+        "reverse_growth_exact" if reverse_gap == 0 else "reverse_growth_nearest"
+    )
+    super_likely_shortlist["target_score_used"] = reverse_effective_score
+    super_likely_shortlist["reverse_target_gap"] = reverse_gap
 
     least_pair_shortlist["selection_source"] = "least_pair_injection"
     least_pair_shortlist["target_score_used"] = target_score
@@ -989,6 +1165,8 @@ def main() -> None:
         predicted_growth_n1=predicted_growth_n1,
         reverse_growth_target_score=reverse_growth_target_score,
         reverse_growth_target_value=float(reverse_growth_target_value),
+        reverse_growth_effective_score=int(reverse_effective_score),
+        reverse_growth_score_gap=int(reverse_gap),
         trailing_window_r_compatible=r_window,
         trailing_mean_r_compatible=trailing_mean_r,
         trailing_mean_last_5=trailing_mean_last_5,
@@ -1043,7 +1221,9 @@ def main() -> None:
     print(
         f"Reverse-growth target: value={summary.reverse_growth_target_value:.3f}  "
         f"score={summary.reverse_growth_target_score}  "
-        f"exact matches={summary.reverse_growth_match_count}"
+        f"effective score={summary.reverse_growth_effective_score}  "
+        f"gap={summary.reverse_growth_score_gap}  "
+        f"matches={summary.reverse_growth_match_count}"
     )
     print(
         f"Least likely main pair: {tuple(summary.least_likely_main_pair)}  "
