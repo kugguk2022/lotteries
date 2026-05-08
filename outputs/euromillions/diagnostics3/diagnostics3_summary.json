@@ -22,10 +22,26 @@
   "pruning_z_threshold": 3.5,
   "inlier_count": 1939,
   "outlier_count": 4,
+  "current_expected_poi": 608.8227459058292,
+  "predicted_next_poi": 297.5690691769039,
+  "predicted_growth_n1": -311.25367672892526,
+  "reverse_growth_target_score": 920,
+  "reverse_growth_target_value": 920.0764226347544,
   "trailing_window_r_compatible": 6,
   "trailing_mean_r_compatible": 535.3333333333334,
   "trailing_mean_last_5": 544.2,
   "target_score_r_compatible": 535,
   "matching_guess_count": 1042347,
-  "total_combinations_scored": 139838160
+  "total_combinations_scored": 139838160,
+  "reverse_growth_match_count": 0,
+  "least_likely_main_pair": [
+    9,
+    22
+  ],
+  "least_likely_main_pair_z": -2.738358721956725,
+  "most_likely_main_pair": [
+    4,
+    23
+  ],
+  "most_likely_main_pair_z": 3.060458037992972
 }
