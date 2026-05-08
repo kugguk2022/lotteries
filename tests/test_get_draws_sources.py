@@ -26,6 +26,31 @@ def test_fetch_and_normalize_lottology(monkeypatch, tmp_path):
     assert "draw_date" in result.raw_csv.splitlines()[0]
 
 
+def test_fetch_and_normalize_archive(monkeypatch, tmp_path):
+    def fake_fetch(session=None, start_year=None, end_year=None):
+        assert start_year == 2026
+        assert end_year == 2026
+        return [
+            lottology_mod.EMRow("2026-05-01", 3, 9, 42, 46, 47, 1, 11),
+            lottology_mod.EMRow("2026-05-05", 3, 4, 8, 20, 31, 6, 8),
+        ]
+
+    monkeypatch.setenv("EUROMILLIONS_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr("euromillions.get_draws.fetch_euromillions_archive", fake_fetch)
+
+    result = fetch_and_normalize(
+        source="archive",
+        cache_dir=tmp_path,
+        use_cache=False,
+        date_from="2026-01-01",
+        date_to="2026-12-31",
+    )
+
+    assert list(result.dataframe.draw_date.astype(str)) == ["2026-05-01", "2026-05-05"]
+    assert result.dataframe.iloc[-1]["star_2"] == 8
+    assert "draw_date" in result.raw_csv.splitlines()[0]
+
+
 def test_fetch_and_normalize_auto_falls_back(monkeypatch, tmp_path):
     calls = []
 

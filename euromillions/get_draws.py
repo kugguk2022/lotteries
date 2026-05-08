@@ -14,6 +14,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from .archive_source import fetch_euromillions_archive
 from .schema import validate_df
 from .lottology import EMRow, LOTTOLOGY_ARCHIVE_URL, fetch_euromillions_lottology
 
@@ -22,7 +23,7 @@ SECONDARY_URL = "https://www.national-lottery.co.uk/results/euromillions/draw-hi
 PEDRO_URL = SECONDARY_URL
 CACHE_DIR = Path(".cache/euromillions")
 _MIN_ROWS_FULL_HISTORY = 300
-SOURCE_CHOICES = ("merseyworld", "pedro", "lottology", "auto")
+SOURCE_CHOICES = ("merseyworld", "pedro", "archive", "lottology", "auto")
 
 
 class FetchError(RuntimeError):
@@ -182,8 +183,8 @@ def _apply_date_filters(df: pd.DataFrame, date_from: str | None, date_to: str | 
     return filtered.reset_index(drop=True)
 
 
-def _lottology_rows_to_df(rows: List[EMRow]) -> pd.DataFrame:
-    """Convert Lottology EMRow list into the normalized draw dataframe shape."""
+def _em_rows_to_df(rows: List[EMRow]) -> pd.DataFrame:
+    """Convert EMRow list into the normalized draw dataframe shape."""
 
     df = pd.DataFrame(
         [
@@ -328,7 +329,44 @@ def _fetch_lottology_source(
         return FetchResult(raw_csv=cached_csv, dataframe=dataframe, cache_path=cache_path)
 
     rows = fetch_euromillions_lottology(session=session)
-    dataframe = _apply_date_filters(_lottology_rows_to_df(rows), date_from, date_to)
+    dataframe = _apply_date_filters(_em_rows_to_df(rows), date_from, date_to)
+    raw_csv = dataframe.to_csv(index=False)
+    if use_cache:
+        cache_path.write_text(raw_csv, encoding="utf-8")
+
+    if out_path:
+        write_csv(dataframe, out_path, append=append)
+    return FetchResult(raw_csv=raw_csv, dataframe=dataframe, cache_path=cache_path)
+
+
+def _fetch_archive_source(
+    *,
+    date_from: str | None,
+    date_to: str | None,
+    out_path: Path | None,
+    append: bool,
+    session: Optional[requests.Session],
+    cache_dir: Path | None,
+    use_cache: bool,
+) -> FetchResult:
+    cache_params = {k: v for k, v in {"from": date_from, "to": date_to}.items() if v}
+    cache_path = _cache_key("archive", cache_params, _cache_dir(cache_dir))
+
+    if use_cache and cache_path.exists():
+        cached_csv = cache_path.read_text(encoding="utf-8")
+        dataframe = _apply_date_filters(normalize(cached_csv), date_from, date_to)
+        if out_path:
+            write_csv(dataframe, out_path, append=append)
+        return FetchResult(raw_csv=cached_csv, dataframe=dataframe, cache_path=cache_path)
+
+    start_year = pd.to_datetime(date_from).year if date_from else None
+    end_year = pd.to_datetime(date_to).year if date_to else None
+    rows = fetch_euromillions_archive(
+        session=session,
+        start_year=start_year,
+        end_year=end_year,
+    )
+    dataframe = _apply_date_filters(_em_rows_to_df(rows), date_from, date_to)
     raw_csv = dataframe.to_csv(index=False)
     if use_cache:
         cache_path.write_text(raw_csv, encoding="utf-8")
@@ -368,7 +406,7 @@ def fetch_and_normalize(
     if source not in SOURCE_CHOICES:
         raise ValueError(f"Unsupported source {source!r}; choose from {SOURCE_CHOICES}.")
 
-    candidates = ["merseyworld", "pedro", "lottology"] if source == "auto" else [source]
+    candidates = ["merseyworld", "pedro", "archive", "lottology"] if source == "auto" else [source]
     errors: List[str] = []
 
     for candidate in candidates:
@@ -399,6 +437,16 @@ def fetch_and_normalize(
                 )
             if candidate == "lottology":
                 return _fetch_lottology_source(
+                    date_from=date_from,
+                    date_to=date_to,
+                    out_path=out_path,
+                    append=append,
+                    session=session,
+                    cache_dir=cache_dir,
+                    use_cache=use_cache,
+                )
+            if candidate == "archive":
+                return _fetch_archive_source(
                     date_from=date_from,
                     date_to=date_to,
                     out_path=out_path,
@@ -465,7 +513,7 @@ def main() -> None:
         "--source",
         choices=SOURCE_CHOICES,
         default="auto",
-        help="Select draw source: merseyworld (default), pedro (National Lottery), lottology, or auto fallback.",
+        help="Select draw source: merseyworld, pedro (legacy National Lottery CSV), archive (full yearly history), lottology, or auto fallback.",
     )
     args = parser.parse_args()
 

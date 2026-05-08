@@ -1,6 +1,6 @@
 {
   "N": 50,
-  "steps": 843,
-  "train_steps": 674,
-  "test_steps": 169
+  "steps": 1743,
+  "train_steps": 1394,
+  "test_steps": 349
 }
