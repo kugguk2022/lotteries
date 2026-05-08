@@ -122,15 +122,16 @@ python eurodreams/eurodreams_get_draws.py --out data/eurodreams_2023_2025.csv --
 
 ## Run-All Orchestrator
 
-`run_all.py` pulls history for EuroMillions, Totoloto, and EuroDreams (via the existing fetchers), generates frequency-weighted candidates for each, and reports whether the frequency sampler beats a uniform random baseline on a simple “top-bin hit rate” metric with a permutation-test p-value.
+`run_all.py` pulls history for EuroMillions, Totoloto, and EuroDreams (via the existing fetchers), generates frequency-weighted candidates for each, and evaluates the baseline in a forward-only walk-forward setup. At each holdout draw `t`, it fits frequencies on draws `< t`, samples candidates from that training-only distribution, and compares their realized hit rate on draw `t` against a uniform-random baseline.
 
 ```bash
-python run_all.py --n-candidates 200 --permutation-iters 500 --smoothing 1.0
+python run_all.py --n-candidates 200 --permutation-iters 500 --smoothing 1.0 --test-frac 0.2
 ```
 
 - Fetches to `data/{lottery}.csv` by default (reuses cached files if present).
 - Writes candidates to `runs/{lottery}_candidates.csv`.
-- Prints mean scores for frequency vs random and an approximate p-value; values << 0.05 indicate the frequency sampler captures bias beyond uniform chance on the observed history (not forward-looking predictiveness).
+- Prints forward mean score for frequency vs random, mean lift, and an approximate permutation-test p-value on the holdout window.
+- Uses chronological evaluation only; the holdout draws are never used to fit the sampling frequencies that score them.
 - If a fetch fails (network or source drift) but a local CSV already exists, it will reuse the local copy; otherwise the run stops for that lottery.
 
 ## Architecture & Logic

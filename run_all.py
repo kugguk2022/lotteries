@@ -157,6 +157,22 @@ def score_candidates(
     return np.asarray(scores, dtype=float)
 
 
+def score_candidates_against_draw(
+    candidates: pd.DataFrame,
+    actual_main: set[int],
+    actual_bonus: set[int],
+    main_k: int,
+    bonus_k: int,
+) -> np.ndarray:
+    denom = main_k + bonus_k if bonus_k else main_k
+    scores = []
+    for _, row in candidates.iterrows():
+        main_hits = sum(int(v in actual_main) for v in row["mains"])
+        bonus_hits = sum(int(v in actual_bonus) for v in row["bonus"])
+        scores.append((main_hits + bonus_hits) / denom)
+    return np.asarray(scores, dtype=float)
+
+
 def permutation_pvalue(a: np.ndarray, b: np.ndarray, iters: int, rng: np.random.Generator) -> float:
     combined = np.concatenate([a, b])
     n = len(a)
@@ -170,7 +186,7 @@ def permutation_pvalue(a: np.ndarray, b: np.ndarray, iters: int, rng: np.random.
     return (count + 1) / (iters + 1)
 
 
-def evaluate(
+def evaluate_walk_forward(
     df: pd.DataFrame,
     main_cols: Sequence[str],
     bonus_cols: Sequence[str],
@@ -179,46 +195,87 @@ def evaluate(
     n_candidates: int,
     perm_iters: int,
     seed: int | None,
+    test_frac: float,
+    min_train_rows: int,
 ) -> Dict[str, float]:
     rng = np.random.default_rng(seed)
 
-    main_probs, bonus_probs = frequency_tables(df, main_cols, bonus_cols, smoothing)
-    main_pop = np.arange(1, len(main_probs) + 1)
-    bonus_pop = np.arange(1, len(bonus_probs) + 1)
+    subset = df[list(main_cols) + list(bonus_cols)].copy()
+    for col in list(main_cols) + list(bonus_cols):
+        subset[col] = pd.to_numeric(subset[col], errors="coerce")
+    subset = subset.dropna().reset_index(drop=True)
+    if subset.empty:
+        raise ValueError("No rows with complete main+bonus numbers to score.")
 
     main_k = len(main_cols)
     bonus_k = len(bonus_cols)
+    total_rows = len(subset)
+    split_idx = max(min_train_rows, int(round((1.0 - test_frac) * total_rows)))
+    split_idx = min(split_idx, total_rows - 1)
+    split_idx = max(split_idx, 2)
 
-    freq_cands = sample_candidates(
-        main_pop, bonus_pop, main_k, bonus_k, rng, main_probs, bonus_probs, n=n_candidates
-    )
-    rand_cands = sample_candidates(
-        main_pop, bonus_pop, main_k, bonus_k, rng, None, None, n=n_candidates
-    )
+    if total_rows - split_idx < 1:
+        raise ValueError("Not enough rows for a forward holdout.")
 
-    top_main = set(main_pop[np.argsort(main_probs)[::-1][: max(1, int(0.2 * len(main_pop)))]])
-    top_bonus = set(
-        bonus_pop[np.argsort(bonus_probs)[::-1][: max(1, int(0.2 * len(bonus_pop)))]]
-    )
+    freq_step_scores = []
+    rand_step_scores = []
+    for t in range(split_idx, total_rows):
+        train_df = subset.iloc[:t]
+        actual = subset.iloc[t]
+        main_probs, bonus_probs = frequency_tables(train_df, main_cols, bonus_cols, smoothing)
+        main_pop = np.arange(1, len(main_probs) + 1)
+        bonus_pop = np.arange(1, len(bonus_probs) + 1)
 
-    freq_scores = score_candidates(freq_cands, top_main, top_bonus, main_k, bonus_k)
-    rand_scores = score_candidates(rand_cands, top_main, top_bonus, main_k, bonus_k)
+        freq_cands = sample_candidates(
+            main_pop, bonus_pop, main_k, bonus_k, rng, main_probs, bonus_probs, n=n_candidates
+        )
+        rand_cands = sample_candidates(
+            main_pop, bonus_pop, main_k, bonus_k, rng, None, None, n=n_candidates
+        )
 
-    pval = permutation_pvalue(freq_scores, rand_scores, perm_iters, rng)
+        actual_main = {int(actual[col]) for col in main_cols}
+        actual_bonus = {int(actual[col]) for col in bonus_cols}
+        freq_scores = score_candidates_against_draw(
+            freq_cands, actual_main, actual_bonus, main_k, bonus_k
+        )
+        rand_scores = score_candidates_against_draw(
+            rand_cands, actual_main, actual_bonus, main_k, bonus_k
+        )
+        freq_step_scores.append(float(freq_scores.mean()))
+        rand_step_scores.append(float(rand_scores.mean()))
+
+    freq_arr = np.asarray(freq_step_scores, dtype=float)
+    rand_arr = np.asarray(rand_step_scores, dtype=float)
+    pval = permutation_pvalue(freq_arr.copy(), rand_arr.copy(), perm_iters, rng)
     return {
-        "freq_mean": float(freq_scores.mean()),
-        "rand_mean": float(rand_scores.mean()),
+        "freq_mean": float(freq_arr.mean()),
+        "rand_mean": float(rand_arr.mean()),
+        "mean_lift": float(freq_arr.mean() - rand_arr.mean()),
         "p_value": float(pval),
+        "train_rows": float(split_idx),
+        "test_rows": float(total_rows - split_idx),
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Fetch EuroMillions, Totoloto, EuroDreams draws; run baseline inference; report significance."
+        description="Fetch lottery histories, run a walk-forward baseline inference evaluation, and report significance."
     )
     parser.add_argument("--n-candidates", type=int, default=200, help="Samples per lottery per strategy")
     parser.add_argument("--permutation-iters", type=int, default=500, help="Permutation iterations for p-value")
     parser.add_argument("--smoothing", type=float, default=1.0, help="Additive smoothing for frequencies")
+    parser.add_argument(
+        "--test-frac",
+        type=float,
+        default=0.2,
+        help="Fraction of complete history reserved for forward walk-forward evaluation.",
+    )
+    parser.add_argument(
+        "--min-train-rows",
+        type=int,
+        default=100,
+        help="Minimum initial training rows before the forward holdout begins.",
+    )
     parser.add_argument("--skip-fetch", action="store_true", help="Use existing CSVs, skip network fetch")
     parser.add_argument("--seed", type=int, default=1234, help="Random seed for reproducibility")
     parser.add_argument("--quiet", action="store_true", help="Reduce console output")
@@ -239,7 +296,7 @@ def main() -> None:
             print(f"[info] using existing history at {history}")
 
         df = pd.read_csv(history)
-        result = evaluate(
+        result = evaluate_walk_forward(
             df,
             cfg["main_cols"],  # type: ignore[arg-type]
             cfg["bonus_cols"],  # type: ignore[arg-type]
@@ -247,12 +304,15 @@ def main() -> None:
             n_candidates=args.n_candidates,
             perm_iters=args.permutation_iters,
             seed=args.seed,
+            test_frac=args.test_frac,
+            min_train_rows=args.min_train_rows,
         )
 
         if not args.quiet:
             print(
                 f"freq_mean={result['freq_mean']:.3f} | rand_mean={result['rand_mean']:.3f} | "
-                f"p≈{result['p_value']:.3f}"
+                f"lift={result['mean_lift']:.3f} | p≈{result['p_value']:.3f} | "
+                f"train={int(result['train_rows'])} test={int(result['test_rows'])}"
             )
 
         # Save candidates for inspection
