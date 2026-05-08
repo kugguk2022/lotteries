@@ -11,11 +11,10 @@
     "at_least_3_hits_rate":0.0028653295,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
     "lift_vs_random_mean_hits":0.0444126074,
     "lift_vs_random_recall":0.0088825215,
-    "mean_hits_z_vs_random":1.2906381876
+    "mean_hits_z_vs_random":1.2906381876,
+    "survives_vs_random_95":false
   },
   {
     "version":"agent_current_hold140",
@@ -29,11 +28,10 @@
     "at_least_3_hits_rate":0.0071428571,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
     "lift_vs_random_mean_hits":0.05,
     "lift_vs_random_recall":0.01,
-    "mean_hits_z_vs_random":0.9202790774
+    "mean_hits_z_vs_random":0.9202790774,
+    "survives_vs_random_95":false
   },
   {
     "version":"mixer_current_hold140",
@@ -47,11 +45,10 @@
     "at_least_3_hits_rate":0.0,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
     "lift_vs_random_mean_hits":0.0571428571,
     "lift_vs_random_recall":0.0114285714,
-    "mean_hits_z_vs_random":1.051747517
+    "mean_hits_z_vs_random":1.051747517,
+    "survives_vs_random_95":false
   },
   {
     "version":"freq_top5_test349",
@@ -65,11 +62,10 @@
     "at_least_3_hits_rate":0.0028653295,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
     "lift_vs_random_mean_hits":0.0300859599,
     "lift_vs_random_recall":0.006017192,
-    "mean_hits_z_vs_random":0.8743032884
+    "mean_hits_z_vs_random":0.8743032884,
+    "survives_vs_random_95":false
   },
   {
     "version":"freq_top5_hold140",
@@ -83,47 +79,27 @@
     "at_least_3_hits_rate":0.0,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
     "lift_vs_random_mean_hits":0.0571428571,
     "lift_vs_random_recall":0.0114285714,
-    "mean_hits_z_vs_random":1.051747517
+    "mean_hits_z_vs_random":1.051747517,
+    "survives_vs_random_95":false
   },
   {
-    "version":"random_top5_test349",
-    "window":"agent_test",
-    "steps":349.0,
-    "mean_hits":0.5243553009,
-    "recall_at_5":0.1048710602,
-    "any_hit_rate":0.446991404,
-    "exact_5_of_5_accuracy":0.0,
-    "at_least_2_hits_rate":0.0773638968,
-    "at_least_3_hits_rate":0.0,
+    "version":"random_theory",
+    "window":"theory",
+    "steps":null,
+    "mean_hits":0.5,
+    "recall_at_5":0.1,
+    "any_hit_rate":0.4233613057,
+    "exact_5_of_5_accuracy":0.000000472,
+    "at_least_2_hits_rate":0.0717523457,
+    "at_least_3_hits_rate":0.0047792105,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
-    "lift_vs_random_mean_hits":0.0243553009,
-    "lift_vs_random_recall":0.0048710602,
-    "mean_hits_z_vs_random":0.7077693287
-  },
-  {
-    "version":"random_top5_hold140",
-    "window":"mixer_holdout",
-    "steps":140.0,
-    "mean_hits":0.5714285714,
-    "recall_at_5":0.1142857143,
-    "any_hit_rate":0.4928571429,
-    "exact_5_of_5_accuracy":0.0,
-    "at_least_2_hits_rate":0.0785714286,
-    "at_least_3_hits_rate":0.0,
-    "random_mean_hits_theory":0.5,
-    "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
-    "lift_vs_random_mean_hits":0.0714285714,
-    "lift_vs_random_recall":0.0142857143,
-    "mean_hits_z_vs_random":1.3146843962
+    "lift_vs_random_mean_hits":0.0,
+    "lift_vs_random_recall":0.0,
+    "mean_hits_z_vs_random":null,
+    "survives_vs_random_95":false
   },
   {
     "version":"agent_run1_summary_only",
@@ -137,10 +113,9 @@
     "at_least_3_hits_rate":null,
     "random_mean_hits_theory":0.5,
     "random_recall_theory":0.1,
-    "random_any_hit_theory":0.4233613057,
-    "random_exact_theory":0.000000472,
     "lift_vs_random_mean_hits":-0.0341614907,
     "lift_vs_random_recall":-0.0068322981,
-    "mean_hits_z_vs_random":null
+    "mean_hits_z_vs_random":null,
+    "survives_vs_random_95":false
   }
 ]

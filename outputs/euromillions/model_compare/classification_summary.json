@@ -1,0 +1,9 @@
+{
+  "random_theory": {
+    "mean_hits": 0.5,
+    "recall_at_5": 0.1,
+    "any_hit_rate": 0.4233613056693538,
+    "exact_5_of_5_accuracy": 4.719741735732221e-07
+  },
+  "survivors": []
+}
