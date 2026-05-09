@@ -34,6 +34,7 @@ FLOOR = 1e-2
 @dataclass
 class FitSummary:
     rows: int
+    cutoff_start_date: str
     start_date: str
     end_date: str
     weekday_flag: str
@@ -106,7 +107,17 @@ def parse_args() -> argparse.Namespace:
         default=FLOOR,
         help="Small positive floor added to the seasonal variance baseline.",
     )
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        default=None,
+        help="Optional inclusive draw-date cutoff in YYYY-MM-DD for a regime-only rerun.",
+    )
     return parser.parse_args()
+
+
+def resolve_repo_path(path: Path) -> Path:
+    return path if path.is_absolute() else REPO_ROOT / path
 
 
 def choose_weekday_flag(dow: pd.Series) -> tuple[str, np.ndarray]:
@@ -118,7 +129,9 @@ def choose_weekday_flag(dow: pd.Series) -> tuple[str, np.ndarray]:
     return label, (dow.to_numpy() == flagged).astype(float)
 
 
-def load_model_frame(history_path: Path, poi_path: Path) -> tuple[pd.DataFrame, str]:
+def load_model_frame(
+    history_path: Path, poi_path: Path, *, start_date: str | None
+) -> tuple[pd.DataFrame, str]:
     history = pd.read_csv(history_path, parse_dates=["draw_date"])
     history = history.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
 
@@ -133,6 +146,8 @@ def load_model_frame(history_path: Path, poi_path: Path) -> tuple[pd.DataFrame, 
         )
 
     frame = pd.DataFrame({"date": history["draw_date"], "poi": poi})
+    if start_date is not None:
+        frame = frame[frame["date"] >= pd.Timestamp(start_date)].reset_index(drop=True)
     frame["t"] = np.arange(len(frame), dtype=int)
     frame["dow"] = frame["date"].dt.dayofweek.astype(int)
     frame["woy"] = frame["date"].dt.isocalendar().week.astype(int)
@@ -392,10 +407,13 @@ def save_diagnostics_plot(
 
 def main() -> None:
     args = parse_args()
-    out_dir = args.out_dir
+    history_path = resolve_repo_path(args.history)
+    poi_path = resolve_repo_path(args.poi)
+    out_dir = resolve_repo_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    df, weekday_flag = load_model_frame(args.history, args.poi)
+    df, weekday_flag = load_model_frame(history_path, poi_path, start_date=args.start_date)
+    cutoff_start_date = args.start_date or df["date"].min().date().isoformat()
 
     X_mean = sm.add_constant(df[["t", weekday_flag]])
     ols = sm.OLS(df["poi"], X_mean).fit()
@@ -505,6 +523,7 @@ def main() -> None:
 
     summary = FitSummary(
         rows=len(df),
+        cutoff_start_date=cutoff_start_date,
         start_date=df["date"].min().date().isoformat(),
         end_date=df["date"].max().date().isoformat(),
         weekday_flag=weekday_flag,
@@ -541,7 +560,10 @@ def main() -> None:
     print("=" * 60)
     print("SEASONAL GARCH-X — Beam Variance Model")
     print("=" * 60)
-    print(f"Rows: {len(df)}  Date range: {summary.start_date} -> {summary.end_date}")
+    print(
+        f"Rows: {len(df)}  Cutoff: {summary.cutoff_start_date}  "
+        f"Date range: {summary.start_date} -> {summary.end_date}"
+    )
     print(
         f"Mean equation: poi ~ t + {weekday_flag}  "
         f"(R^2={ols.rsquared:.4f}, JB p={jb_p:.4f})"

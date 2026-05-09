@@ -83,6 +83,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional GLM link override. Defaults to identity for gaussian and log otherwise.",
     )
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        default=None,
+        help="Optional inclusive draw-date cutoff in YYYY-MM-DD for a regime-only rerun.",
+    )
     return parser.parse_args()
 
 
@@ -133,13 +139,15 @@ def choose_weekday_flag(dow: pd.Series) -> tuple[str, np.ndarray]:
     return f"is_{calendar.day_name[flagged].lower()}", (dow.to_numpy() == flagged).astype(float)
 
 
-def load_model_frame(history_path: Path, poi_path: Path):
+def load_model_frame(history_path: Path, poi_path: Path, *, start_date: str | None):
     history = pd.read_csv(history_path, parse_dates=["draw_date"])
     history = history.sort_values("draw_date").drop_duplicates("draw_date").reset_index(drop=True)
     poi = pd.to_numeric(pd.read_csv(poi_path, header=None).squeeze(), errors="coerce").dropna().reset_index(drop=True)
     if len(history) != len(poi):
         raise ValueError(f"Row mismatch: history={len(history)}, poi={len(poi)}")
     df = pd.DataFrame({"date": history["draw_date"], "poi": poi})
+    if start_date is not None:
+        df = df[df["date"] >= pd.Timestamp(start_date)].reset_index(drop=True)
     df["t"] = np.arange(len(df))
     df["dow"] = df["date"].dt.dayofweek.astype(int)
     df["woy"] = df["date"].dt.isocalendar().week.astype(int)
@@ -305,7 +313,8 @@ def main() -> None:
     out_dir = resolve_repo_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    df, weekday_flag = load_model_frame(history_path, poi_path)
+    df, weekday_flag = load_model_frame(history_path, poi_path, start_date=args.start_date)
+    cutoff_start_date = args.start_date or df["date"].min().date().isoformat()
 
     fourier_arr, fourier_names = build_fourier_terms(df["woy"], args.fourier_order)
 
@@ -407,7 +416,10 @@ def main() -> None:
     print("=" * 70)
     print("POISSON GLM SEASONAL MEAN + FLOORED GARCH-X")
     print("=" * 70)
-    print(f"Rows: {len(df)}  |  {df['date'].min().date()} → {df['date'].max().date()}")
+    print(
+        f"Rows: {len(df)}  | cutoff {cutoff_start_date} |  "
+        f"{df['date'].min().date()} → {df['date'].max().date()}"
+    )
     print(f"Mean: Poisson GLM + Fourier({args.fourier_order}) + trend + {weekday_flag}")
     print(f"GARCH(1,{best_order})-t   alpha={alpha_hat:.4f}  betas={[round(b,4) for b in betas_hat]}  nu={nu_hat:.2f}")
     print(f"OOS: RMSE={rmse:.3f}  MAE={mae:.3f}  80% cov={coverage_80:.3f}  95% cov={coverage_95:.3f}")

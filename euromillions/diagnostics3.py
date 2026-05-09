@@ -17,6 +17,7 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy.stats import norm
 
+from euromillions.schema import validate_df
 from euromillions_agent.phase2_sobol import euler_phi_upto
 
 try:
@@ -36,12 +37,15 @@ DEFAULT_BATCH_SIZE = 200_000
 DEFAULT_MODE = "full7"
 DEFAULT_ROLLING_WINDOW = 100
 EXCEL_MAX_ROWS = 1_048_576
+FULL7_DEFAULT_START_DATE = "2016-09-27"
 
 
 @dataclass
 class Diagnostics3Summary:
+    raw_rows: int
     mode: str
     rows: int
+    cutoff_start_date: str
     start_date: str
     end_date: str
     main_n: int
@@ -50,16 +54,17 @@ class Diagnostics3Summary:
     phi_poi_corr: float
     poi_mean: float
     poi_std: float
+    phi_model: str
     glm_family: str
     glm_link: str
-    raw_glm_intercept: float
-    raw_glm_phi_slope: float
-    pruned_glm_intercept: float
-    pruned_glm_phi_slope: float
-    pruned_glm_aic: float
-    pruned_glm_deviance: float
-    pruned_glm_fitted_mean: float
-    pruned_glm_shifted_prediction_mean: float
+    model_intercept: float
+    model_phi_linear: float
+    model_phi_quadratic: float
+    model_aic: float
+    model_deviance: float
+    model_fitted_mean: float
+    model_shifted_prediction_mean: float
+    pruning_applied: bool
     pruning_z_threshold: float
     inlier_count: int
     outlier_count: int
@@ -133,11 +138,21 @@ def parse_args() -> argparse.Namespace:
         default=500,
         help="Number of reverse-growth candidates to keep in the Excel shortlist sheet.",
     )
+    parser.add_argument(
+        "--start-date",
+        type=str,
+        default=None,
+        help=(
+            "Optional inclusive draw-date cutoff in YYYY-MM-DD. "
+            "If omitted, full7 mode defaults to 2016-09-27 so phi predictions stay in the 12-star era."
+        ),
+    )
     return parser.parse_args()
 
 
 def load_history(history_path: Path) -> pd.DataFrame:
-    history = pd.read_csv(history_path, parse_dates=["draw_date"])
+    history = pd.read_csv(history_path)
+    history = validate_df(history)
     history = history.sort_values("draw_date").drop_duplicates(subset=["draw_date"]).reset_index(drop=True)
 
     required = [f"ball_{idx}" for idx in range(1, 6)] + [f"star_{idx}" for idx in range(1, 3)]
@@ -148,6 +163,22 @@ def load_history(history_path: Path) -> pd.DataFrame:
             "Expected normalized columns ball_1..ball_5 and star_1..star_2."
         )
     return history
+
+
+def apply_start_date_cutoff(
+    history: pd.DataFrame, *, mode: str, start_date_arg: str | None
+) -> tuple[pd.DataFrame, str]:
+    effective_start = start_date_arg
+    if effective_start is None and mode == "full7":
+        effective_start = FULL7_DEFAULT_START_DATE
+    if effective_start is None:
+        return history, history["draw_date"].min().date().isoformat()
+
+    cutoff = pd.Timestamp(effective_start)
+    filtered = history[history["draw_date"] >= cutoff].reset_index(drop=True)
+    if filtered.empty:
+        raise ValueError(f"No rows remain after applying start-date cutoff {effective_start}.")
+    return filtered, cutoff.date().isoformat()
 
 
 @dataclass
@@ -354,15 +385,25 @@ def robust_zscore(values: np.ndarray) -> np.ndarray:
     return 0.6744897501960817 * (arr - med) / mad
 
 
+def build_phi_design(phi_values: np.ndarray) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "const": 1.0,
+            "phi_linear": np.asarray(phi_values, dtype=float),
+            "phi_quadratic": np.asarray(phi_values, dtype=float) ** 2,
+        }
+    )
+
+
 def fit_phi_glm(poi: np.ndarray, phi_current: np.ndarray, phi_shifted: np.ndarray):
-    exog = pd.DataFrame({"const": 1.0, "g1": phi_current})
+    exog = build_phi_design(phi_current)
     glm = sm.GLM(
         poi,
         exog,
         family=sm.families.Gaussian(link=sm.families.links.Identity()),
     ).fit()
     fitted = np.asarray(glm.fittedvalues, dtype=float)
-    shifted_exog = pd.DataFrame({"const": 1.0, "g1": phi_shifted})
+    shifted_exog = build_phi_design(phi_shifted)
     shifted_pred = np.asarray(glm.predict(shifted_exog), dtype=float)
     return glm, fitted, shifted_pred
 
@@ -374,21 +415,11 @@ def fit_pruned_phi_glm(
     *,
     outlier_z: float,
 ):
-    raw_glm, raw_fitted, _ = fit_phi_glm(poi, phi_current, phi_shifted)
-    raw_resid = poi - raw_fitted
-    resid_z = robust_zscore(raw_resid)
-    inlier_mask = np.abs(resid_z) <= outlier_z
-    if int(inlier_mask.sum()) < max(20, len(poi) // 4):
-        inlier_mask = np.ones(len(poi), dtype=bool)
-
-    pruned_glm, _, shifted_pred = fit_phi_glm(
-        poi[inlier_mask],
-        phi_current[inlier_mask],
-        phi_shifted,
-    )
-    full_exog = pd.DataFrame({"const": 1.0, "g1": phi_current})
-    pruned_fitted = np.asarray(pruned_glm.predict(full_exog), dtype=float)
-    return raw_glm, pruned_glm, pruned_fitted, shifted_pred, resid_z, inlier_mask
+    del outlier_z
+    glm, fitted, shifted_pred = fit_phi_glm(poi, phi_current, phi_shifted)
+    resid_z = robust_zscore(poi - fitted)
+    inlier_mask = np.ones(len(poi), dtype=bool)
+    return glm, glm, fitted, shifted_pred, resid_z, inlier_mask
 
 
 def score_batch(pair_counts: np.ndarray, combos: np.ndarray) -> np.ndarray:
@@ -789,21 +820,29 @@ def prepare_excel_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def write_excel_workbook(out_path: Path, sheets: list[tuple[str, pd.DataFrame]]) -> None:
+    max_data_rows = EXCEL_MAX_ROWS - 1
+
+    def chunked_sheets(sheet_name: str, frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+        if len(frame) <= max_data_rows:
+            return [(sheet_name[:31], frame)]
+        chunks: list[tuple[str, pd.DataFrame]] = []
+        base = sheet_name[:27]
+        for chunk_idx, start in enumerate(range(0, len(frame), max_data_rows), start=1):
+            stop = start + max_data_rows
+            chunks.append((f"{base}_{chunk_idx}"[:31], frame.iloc[start:stop].reset_index(drop=True)))
+        return chunks
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if xlsxwriter is not None:
         workbook = xlsxwriter.Workbook(str(out_path), {"constant_memory": True})
         try:
             for sheet_name, frame in sheets:
                 excel_frame = prepare_excel_frame(frame)
-                if len(excel_frame) + 1 > EXCEL_MAX_ROWS:
-                    raise ValueError(
-                        f"Sheet '{sheet_name}' has {len(excel_frame)} data rows which exceeds the Excel limit."
-                    )
-
-                worksheet = workbook.add_worksheet(sheet_name[:31])
-                worksheet.write_row(0, 0, list(excel_frame.columns))
-                for row_idx, row in enumerate(excel_frame.itertuples(index=False, name=None), start=1):
-                    worksheet.write_row(row_idx, 0, row)
+                for chunk_name, chunk_frame in chunked_sheets(sheet_name, excel_frame):
+                    worksheet = workbook.add_worksheet(chunk_name)
+                    worksheet.write_row(0, 0, list(chunk_frame.columns))
+                    for row_idx, row in enumerate(chunk_frame.itertuples(index=False, name=None), start=1):
+                        worksheet.write_row(row_idx, 0, row)
         finally:
             workbook.close()
         return
@@ -814,15 +853,11 @@ def write_excel_workbook(out_path: Path, sheets: list[tuple[str, pd.DataFrame]])
     workbook = Workbook(write_only=True)
     for sheet_name, frame in sheets:
         excel_frame = prepare_excel_frame(frame)
-        if len(excel_frame) + 1 > EXCEL_MAX_ROWS:
-            raise ValueError(
-                f"Sheet '{sheet_name}' has {len(excel_frame)} data rows which exceeds the Excel limit."
-            )
-
-        worksheet = workbook.create_sheet(title=sheet_name[:31])
-        worksheet.append(list(excel_frame.columns))
-        for row in excel_frame.itertuples(index=False, name=None):
-            worksheet.append(list(row))
+        for chunk_name, chunk_frame in chunked_sheets(sheet_name, excel_frame):
+            worksheet = workbook.create_sheet(title=chunk_name)
+            worksheet.append(list(chunk_frame.columns))
+            for row in chunk_frame.itertuples(index=False, name=None):
+                worksheet.append(list(row))
     workbook.save(out_path)
 
 
@@ -838,7 +873,7 @@ def save_plot(
     fig, axes = plt.subplots(3, 1, figsize=(14, 14), constrained_layout=True)
 
     axes[0].plot(frame["draw_date"], frame["poi"], color="steelblue", lw=0.8, label="poi")
-    axes[0].plot(frame["draw_date"], fitted, color="navy", lw=1.4, label="phi-pruned glm fitted")
+    axes[0].plot(frame["draw_date"], fitted, color="navy", lw=1.4, label="phi quadratic glm fitted")
     if np.any(~inlier_mask):
         axes[0].scatter(
             frame.loc[~inlier_mask, "draw_date"],
@@ -848,7 +883,7 @@ def save_plot(
             label="pruned outliers",
             zorder=3,
         )
-    axes[0].set_title("Diagnostics 3: poi vs Euler-totient-pruned Gaussian GLM")
+    axes[0].set_title("Diagnostics 3: poi vs quadratic Euler-phi Gaussian GLM")
     axes[0].set_ylabel("poi")
     axes[0].legend()
 
@@ -871,7 +906,7 @@ def save_plot(
             label="pruned outliers",
         )
     axes[1].plot(phi_current[order], fitted[order], color="tomato", lw=2, label="glm fit")
-    axes[1].set_title("Euler phi vs poi")
+    axes[1].set_title("Euler phi vs poi (quadratic fit)")
     axes[1].set_xlabel("phi(t)")
     axes[1].set_ylabel("poi")
     axes[1].legend()
@@ -997,7 +1032,12 @@ def main() -> None:
     out_dir = resolve_repo_path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    history = load_history(history_path)
+    raw_history = load_history(history_path)
+    history, effective_start_date = apply_start_date_cutoff(
+        raw_history,
+        mode=args.mode,
+        start_date_arg=args.start_date,
+    )
     pair_diag = build_pair_z_diagnostics(history)
     main_n = int(history[[f"ball_{idx}" for idx in range(1, 6)]].to_numpy(dtype=int).max())
     star_n = int(history[[f"star_{idx}" for idx in range(1, 3)]].to_numpy(dtype=int).max())
@@ -1137,8 +1177,10 @@ def main() -> None:
     )
 
     summary = Diagnostics3Summary(
+        raw_rows=len(raw_history),
         mode=args.mode,
         rows=len(series),
+        cutoff_start_date=effective_start_date,
         start_date=history["draw_date"].min().date().isoformat(),
         end_date=history["draw_date"].max().date().isoformat(),
         main_n=main_n,
@@ -1147,16 +1189,17 @@ def main() -> None:
         phi_poi_corr=corr,
         poi_mean=float(poi.mean()),
         poi_std=float(poi.std(ddof=0)),
+        phi_model="quadratic",
         glm_family="gaussian",
         glm_link="identity",
-        raw_glm_intercept=float(raw_glm.params["const"]),
-        raw_glm_phi_slope=float(raw_glm.params["g1"]),
-        pruned_glm_intercept=float(pruned_glm.params["const"]),
-        pruned_glm_phi_slope=float(pruned_glm.params["g1"]),
-        pruned_glm_aic=float(pruned_glm.aic),
-        pruned_glm_deviance=float(pruned_glm.deviance),
-        pruned_glm_fitted_mean=float(fitted.mean()),
-        pruned_glm_shifted_prediction_mean=float(shifted_pred.mean()),
+        model_intercept=float(pruned_glm.params["const"]),
+        model_phi_linear=float(pruned_glm.params["phi_linear"]),
+        model_phi_quadratic=float(pruned_glm.params["phi_quadratic"]),
+        model_aic=float(pruned_glm.aic),
+        model_deviance=float(pruned_glm.deviance),
+        model_fitted_mean=float(fitted.mean()),
+        model_shifted_prediction_mean=float(shifted_pred.mean()),
+        pruning_applied=False,
         pruning_z_threshold=float(args.outlier_z),
         inlier_count=int(inlier_mask.sum()),
         outlier_count=int((~inlier_mask).sum()),
@@ -1201,16 +1244,20 @@ def main() -> None:
     print("DIAGNOSTICS 3 — Euler Phi Gaussian GLM")
     print("=" * 70)
     print(
-        f"Rows: {summary.rows}  Date range: {summary.start_date} -> {summary.end_date}  "
+        f"Rows: {summary.rows} of {summary.raw_rows}  "
+        f"Cutoff: {summary.cutoff_start_date}  "
+        f"Date range: {summary.start_date} -> {summary.end_date}  "
         f"mode={summary.mode}  pair_dim={summary.pair_dimension}"
     )
     print(f"Correlation(phi, poi): {summary.phi_poi_corr:.4f}")
     print(
-        f"GLM: poi ~ phi(t)  family={summary.glm_family}  link={summary.glm_link}  "
-        f"raw_slope={summary.raw_glm_phi_slope:.4f}  pruned_slope={summary.pruned_glm_phi_slope:.4f}"
+        f"GLM: poi ~ phi(t) + phi(t)^2  family={summary.glm_family}  link={summary.glm_link}  "
+        f"b0={summary.model_intercept:.4f}  "
+        f"b1={summary.model_phi_linear:.4f}  "
+        f"b2={summary.model_phi_quadratic:.6f}"
     )
     print(
-        f"Euler-totient pruning: z<={summary.pruning_z_threshold:.2f}  "
+        f"Residual pruning applied={summary.pruning_applied}  "
         f"inliers={summary.inlier_count}  outliers={summary.outlier_count}"
     )
     print(
