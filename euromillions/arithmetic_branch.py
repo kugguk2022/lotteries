@@ -130,7 +130,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--branch-mode",
         choices=("classic", "prime-pruned"),
-        default="prime-pruned",
+        default="classic",
         help="Use the original upper/lower split or exclude prime-ceiling rows from the upper branch model.",
     )
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
@@ -140,6 +140,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100_000,
         help="Save all exact matches only when the exact hit count stays below this bound.",
+    )
+    parser.add_argument(
+        "--validity-holdout",
+        type=int,
+        default=52,
+        help="Walk-forward one-step holdout length used to validate classic vs prime-pruned next-score forecasts.",
     )
     return parser.parse_args()
 
@@ -386,6 +392,91 @@ def compare_branch_modes(base_branch_frame: pd.DataFrame) -> tuple[dict[str, obj
         "recommendation_basis": "lowest shared_rmse on composite-only targets",
     }
     return report, evaluations
+
+
+def summarize_forecast_errors(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float | int]:
+    err = predicted - actual
+    abs_err = np.abs(err)
+    return {
+        "holdout": int(len(actual)),
+        "mae": float(abs_err.mean()),
+        "rmse": float(np.sqrt(np.mean(err**2))),
+        "median_abs_err": float(np.median(abs_err)),
+        "within_10": float(np.mean(abs_err <= 10.0)),
+        "within_20": float(np.mean(abs_err <= 20.0)),
+    }
+
+
+def run_branch_validity_check(
+    history: pd.DataFrame,
+    *,
+    threshold: float,
+    ratio_mode: str,
+    modulus: int | None,
+    holdout: int,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    if holdout <= 0:
+        return pd.DataFrame(), {
+            "holdout": 0,
+            "classic": {},
+            "prime-pruned": {},
+            "recommended_counts": {},
+            "recommended_mode_holdout": None,
+            "recommendation_basis": "walk-forward one-step holdout rmse",
+        }
+
+    full_branch_frame, *_ = build_branch_frame(
+        history,
+        ratio_mode=ratio_mode,
+        modulus=modulus,
+        threshold=threshold,
+    )
+    eff_holdout = min(int(holdout), max(len(history) - 25, 0))
+    if eff_holdout <= 0:
+        raise ValueError("Not enough rows for the requested validity holdout.")
+
+    rows: list[dict[str, object]] = []
+    start_idx = len(history) - eff_holdout
+    for end in range(start_idx, len(history)):
+        train_history = history.iloc[:end].reset_index(drop=True)
+        base_branch_frame, *_ = build_branch_frame(
+            train_history,
+            ratio_mode=ratio_mode,
+            modulus=modulus,
+            threshold=threshold,
+        )
+        compare_report, _ = compare_branch_modes(base_branch_frame)
+        rows.append(
+            {
+                "draw_date": history["draw_date"].iloc[end],
+                "actual_poi": int(full_branch_frame["poi"].iloc[end]),
+                "classic_predicted_score": int(compare_report["classic"]["predicted_score"]),
+                "prime_pruned_predicted_score": int(compare_report["prime-pruned"]["predicted_score"]),
+                "recommended_mode_internal": str(compare_report["recommended_mode"]),
+            }
+        )
+
+    validity_df = pd.DataFrame(rows)
+    actual = validity_df["actual_poi"].to_numpy(dtype=float)
+    classic_pred = validity_df["classic_predicted_score"].to_numpy(dtype=float)
+    pruned_pred = validity_df["prime_pruned_predicted_score"].to_numpy(dtype=float)
+    classic_summary = summarize_forecast_errors(actual, classic_pred)
+    pruned_summary = summarize_forecast_errors(actual, pruned_pred)
+
+    summary = {
+        "holdout": int(len(validity_df)),
+        "classic": classic_summary,
+        "prime-pruned": pruned_summary,
+        "recommended_counts": {
+            str(key): int(value)
+            for key, value in validity_df["recommended_mode_internal"].value_counts().to_dict().items()
+        },
+        "recommended_mode_holdout": "prime-pruned"
+        if float(pruned_summary["rmse"]) <= float(classic_summary["rmse"])
+        else "classic",
+        "recommendation_basis": "walk-forward one-step holdout rmse",
+    }
+    return validity_df, summary
 
 
 def fit_residual_distribution(resid: np.ndarray) -> ResidualDistribution:
@@ -881,6 +972,13 @@ def main() -> None:
     comparison_report, evaluations = compare_branch_modes(base_branch_frame)
     selected_eval = evaluations[str(args.branch_mode)]
     branch_frame = selected_eval["frame"]
+    validity_df, validity_summary = run_branch_validity_check(
+        history,
+        threshold=float(args.threshold),
+        ratio_mode=str(args.ratio_mode),
+        modulus=args.modulus,
+        holdout=int(args.validity_holdout),
+    )
     pair_diag = build_pair_z_diagnostics(history)
     upper_model = selected_eval["upper_model"]
     upper_fit = selected_eval["upper_fit"]
@@ -985,6 +1083,11 @@ def main() -> None:
         json.dumps(comparison_report, indent=2),
         encoding="utf-8",
     )
+    validity_df.to_csv(out_dir / "branch_validity_backtest.csv", index=False)
+    (out_dir / "branch_validity_backtest.json").write_text(
+        json.dumps(validity_summary, indent=2),
+        encoding="utf-8",
+    )
 
     summary_frame = pd.DataFrame(
         [
@@ -1030,6 +1133,12 @@ def main() -> None:
             {"mode": "prime-pruned", **comparison_report["comparison_on_pruned_targets"]["prime-pruned"]},
         ]
     )
+    validity_summary_frame = pd.DataFrame(
+        [
+            {"mode": "classic", **validity_summary["classic"]},
+            {"mode": "prime-pruned", **validity_summary["prime-pruned"]},
+        ]
+    )
     write_excel_workbook(
         out_dir / "branch_selector.xlsx",
         [
@@ -1037,6 +1146,8 @@ def main() -> None:
             ("branch_fits", excel_safe(branch_fit_frame)),
             ("mode_compare", excel_safe(comparison_frame)),
             ("shared_compare", excel_safe(shared_compare_frame)),
+            ("validity_compare", excel_safe(validity_summary_frame)),
+            ("validity_steps", excel_safe(validity_df)),
             ("shortlist", excel_safe(shortlist_df)),
             ("series_tail", excel_safe(branch_frame.tail(200))),
         ],
@@ -1082,10 +1193,18 @@ def main() -> None:
         f"prime-pruned shared_rmse={comparison_report['comparison_on_pruned_targets']['prime-pruned']['shared_rmse']:.3f}  "
         f"recommended={comparison_report['recommended_mode']}"
     )
+    print(
+        "Validity: "
+        f"classic rmse={validity_summary['classic'].get('rmse', float('nan')):.3f}  "
+        f"prime-pruned rmse={validity_summary['prime-pruned'].get('rmse', float('nan')):.3f}  "
+        f"holdout_recommended={validity_summary['recommended_mode_holdout']}"
+    )
     print(f"Wrote: {out_dir / 'branch_selector.png'}")
     print(f"Wrote: {out_dir / 'branch_selector_pruned.png'}")
     print(f"Wrote: {out_dir / 'branch_superlikely_shortlist.csv'}")
     print(f"Wrote: {out_dir / 'branch_mode_comparison.json'}")
+    print(f"Wrote: {out_dir / 'branch_validity_backtest.csv'}")
+    print(f"Wrote: {out_dir / 'branch_validity_backtest.json'}")
     print(f"Wrote: {out_dir / 'branch_summary.json'}")
 
 

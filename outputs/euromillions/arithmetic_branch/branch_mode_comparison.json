@@ -1,0 +1,56 @@
+{
+  "classic": {
+    "upper_count": 500,
+    "lower_count": 503,
+    "prime_ceiling_count": 0,
+    "training_rows": 1001,
+    "current_branch": "lower",
+    "next_branch": "upper",
+    "predicted_next_poi": 278.7609527242405,
+    "predicted_score": 279,
+    "upper_rmse": 22.61509240387316,
+    "upper_mae": 16.62920461452351,
+    "lower_rmse": 22.80106650384912,
+    "lower_mae": 17.65150264785927
+  },
+  "prime-pruned": {
+    "upper_count": 302,
+    "lower_count": 503,
+    "prime_ceiling_count": 198,
+    "training_rows": 803,
+    "current_branch": "lower",
+    "next_branch": "upper",
+    "predicted_next_poi": 280.76941191286085,
+    "predicted_score": 281,
+    "upper_rmse": 22.66623263524845,
+    "upper_mae": 16.475538444578028,
+    "lower_rmse": 22.80106650384912,
+    "lower_mae": 17.65150264785927
+  },
+  "comparison_on_pruned_targets": {
+    "classic": {
+      "shared_rows": 803,
+      "shared_upper_rows": 300,
+      "shared_lower_rows": 503,
+      "shared_mae": 17.1805865898125,
+      "shared_rmse": 22.807304740394617,
+      "shared_upper_mae": 16.46835547546108,
+      "shared_upper_rmse": 22.809397280986957,
+      "shared_lower_mae": 17.60537651884913,
+      "shared_lower_rmse": 22.806056612851364
+    },
+    "prime-pruned": {
+      "shared_rows": 803,
+      "shared_upper_rows": 300,
+      "shared_lower_rows": 503,
+      "shared_mae": 17.152829760631683,
+      "shared_rmse": 22.77276444297048,
+      "shared_upper_mae": 16.394059696020435,
+      "shared_upper_rmse": 22.716835088553818,
+      "shared_lower_mae": 17.60537651884913,
+      "shared_lower_rmse": 22.806056612851364
+    }
+  },
+  "recommended_mode": "prime-pruned",
+  "recommendation_basis": "lowest shared_rmse on composite-only targets"
+}
