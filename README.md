@@ -131,7 +131,7 @@ Artifacts:
 The repo now also includes a same-ticket-budget shortlist benchmark for the branch "super likely bars" against the existing `diagnostics3` super-likely shortlist:
 
 ```bash
-python -m euromillions.branch_shortlist_benchmark --holdout 3 --top-n 25 --batch-size 20000
+python -m euromillions.branch_shortlist_benchmark --holdout 3 --top-n 25 --batch-size 20000 --out-dir outputs/euromillions/branch_shortlist_benchmark_fair_holdout3
 ```
 
 Current fair benchmark snapshot on the last 3 draws:
