@@ -16,3 +16,4 @@ euromillions/__pycache__/__init__.cpython-310.pyc
 euromillions/__pycache__/__init__.cpython-310.pyc
 euromillions/__pycache__/get_draws.cpython-310.pyc
 euromillions/__init__.py
+outputs/euromillions/diagnostics3/*.xlsx
