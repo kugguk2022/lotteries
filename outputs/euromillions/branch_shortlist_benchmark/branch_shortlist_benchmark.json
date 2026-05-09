@@ -1,0 +1,46 @@
+{
+  "history_rows": 1003,
+  "cutoff_start_date": "2016-09-27",
+  "holdout_steps": 2,
+  "top_n": 25,
+  "branch_mode": "classic",
+  "methods": {
+    "branch_classic": {
+      "steps": 2,
+      "ticket_budget": 50,
+      "mean_best_ball_hits": 1.5,
+      "recall_at_5": 0.30000000000000004,
+      "mean_best_star_hits": 0.5,
+      "recall_at_2_stars": 0.25,
+      "any_ball_hit_rate": 1.0,
+      "at_least_2_ball_hits_rate": 0.5,
+      "at_least_3_ball_hits_rate": 0.0,
+      "any_star_hit_rate": 0.5,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_best_rank": 13.0
+    },
+    "diagnostics3_super_likely": {
+      "steps": 2,
+      "ticket_budget": 26,
+      "mean_best_ball_hits": 1.0,
+      "recall_at_5": 0.2,
+      "mean_best_star_hits": 1.0,
+      "recall_at_2_stars": 0.5,
+      "any_ball_hit_rate": 0.5,
+      "at_least_2_ball_hits_rate": 0.5,
+      "at_least_3_ball_hits_rate": 0.0,
+      "any_star_hit_rate": 1.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_best_rank": 5.0
+    }
+  },
+  "recommended_method_by_recall_at_5": "branch_classic",
+  "recommended_method_by_exact_accuracy": "branch_classic",
+  "comparison": {
+    "branch_minus_diagnostics_recall_at_5": 0.10000000000000003,
+    "branch_minus_diagnostics_exact_5plus2_accuracy": 0.0,
+    "branch_minus_diagnostics_at_least_2_ball_hits_rate": 0.0
+  }
+}

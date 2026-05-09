@@ -90,6 +90,42 @@ python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/e
 
 `euromillions/roi.py` will host walk-forward bankroll simulations, EV gating, and ticket ranking. The CLI entry point will be exposed once the module is production-ready.
 
+## Current Benchmark Snapshot
+
+Recent EuroMillions branch-selection work added a classic vs prime-pruned Euler-totient branch comparison plus a walk-forward validity check.
+
+- Internal branch-fit comparison on composite-only targets slightly favored `prime-pruned`: shared RMSE `22.773` vs `22.807` for `classic`.
+- True one-step walk-forward validity over the last 52 draws favored `classic`: RMSE `26.915` vs `26.972` for `prime-pruned`.
+- Operational conclusion: keep `classic` as the default forecasting mode, and use `prime-pruned` as a structural diagnostic view rather than the forecasting default.
+
+Artifacts:
+
+- [outputs/euromillions/arithmetic_branch/branch_mode_comparison.json](outputs/euromillions/arithmetic_branch/branch_mode_comparison.json)
+- [outputs/euromillions/arithmetic_branch/branch_validity_backtest.json](outputs/euromillions/arithmetic_branch/branch_validity_backtest.json)
+- [outputs/euromillions/arithmetic_branch/branch_selector.png](outputs/euromillions/arithmetic_branch/branch_selector.png)
+- [outputs/euromillions/arithmetic_branch/branch_selector_pruned.png](outputs/euromillions/arithmetic_branch/branch_selector_pruned.png)
+
+The repo now also includes a same-ticket-budget shortlist benchmark for the branch "super likely bars" against the existing `diagnostics3` super-likely shortlist:
+
+```bash
+python -m euromillions.branch_shortlist_benchmark --holdout 3 --top-n 25 --batch-size 20000
+```
+
+Current fair benchmark snapshot on the last 3 draws:
+
+- Both methods used the same realized ticket budget: `27` tickets total.
+- Main-ball recall was tied: recall@5 `0.1333` for `branch_classic` and `0.1333` for `diagnostics3_super_likely`.
+- Exact `5+2` accuracy was `0.0000` for both methods in this small window.
+- `diagnostics3_super_likely` captured more stars in the same-budget comparison: star recall `0.6667` vs `0.0000` for `branch_classic`.
+- Current interpretation: the branch shortlist is not yet materially better than the standard diagnostics shortlist on a fair, tiny holdout; it appears roughly tied on main-ball recovery and worse on stars in this small sample.
+
+Shortlist benchmark artifacts:
+
+- [outputs/euromillions/branch_shortlist_benchmark_fair_holdout3/branch_shortlist_benchmark.json](outputs/euromillions/branch_shortlist_benchmark_fair_holdout3/branch_shortlist_benchmark.json)
+- [outputs/euromillions/branch_shortlist_benchmark_fair_holdout3/branch_shortlist_benchmark_steps.csv](outputs/euromillions/branch_shortlist_benchmark_fair_holdout3/branch_shortlist_benchmark_steps.csv)
+
+These shortlist numbers should be treated as directional only until the same-budget benchmark is extended to a larger holdout window.
+
 ## Testing
 
 ```bash

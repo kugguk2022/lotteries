@@ -95,6 +95,22 @@ def score_ticket_rows(shortlist: pd.DataFrame, actual_draw: pd.Series) -> dict[s
     }
 
 
+def align_shortlists(
+    branch_shortlist: pd.DataFrame,
+    diagnostics_shortlist: pd.DataFrame,
+    *,
+    requested_top_n: int,
+) -> tuple[pd.DataFrame, pd.DataFrame, int]:
+    common_n = min(int(requested_top_n), len(branch_shortlist), len(diagnostics_shortlist))
+    if common_n <= 0:
+        return branch_shortlist.head(0).copy(), diagnostics_shortlist.head(0).copy(), 0
+    return (
+        branch_shortlist.head(common_n).reset_index(drop=True),
+        diagnostics_shortlist.head(common_n).reset_index(drop=True),
+        int(common_n),
+    )
+
+
 def summarize_method(step_frame: pd.DataFrame) -> dict[str, float | int]:
     best_ball_hits = step_frame["best_ball_hits"].to_numpy(dtype=float)
     best_star_hits = step_frame["best_star_hits"].to_numpy(dtype=float)
@@ -204,17 +220,6 @@ def main() -> None:
             top_n=int(args.top_n),
             max_save_matches=0,
         )
-        branch_score = score_ticket_rows(branch_shortlist, actual_draw)
-        rows.append(
-            {
-                "draw_date": actual_draw["draw_date"],
-                "method": f"branch_{args.branch_mode}",
-                "target_score": int(branch_eval["predicted_score"]),
-                "target_gap": int(branch_gap),
-                **branch_score,
-            }
-        )
-
         diagnostics_shortlist, diagnostics_meta = build_diagnostics3_shortlist(
             poi=poi,
             pair_counts=pair_counts,
@@ -224,6 +229,22 @@ def main() -> None:
             batch_size=int(args.batch_size),
             top_n=int(args.top_n),
         )
+        branch_shortlist, diagnostics_shortlist, common_n = align_shortlists(
+            branch_shortlist,
+            diagnostics_shortlist,
+            requested_top_n=int(args.top_n),
+        )
+        branch_score = score_ticket_rows(branch_shortlist, actual_draw)
+        rows.append(
+            {
+                "draw_date": actual_draw["draw_date"],
+                "method": f"branch_{args.branch_mode}",
+                "target_score": int(branch_eval["predicted_score"]),
+                "target_gap": int(branch_gap),
+                "effective_top_n": int(common_n),
+                **branch_score,
+            }
+        )
         diagnostics_score = score_ticket_rows(diagnostics_shortlist, actual_draw)
         rows.append(
             {
@@ -231,6 +252,7 @@ def main() -> None:
                 "method": "diagnostics3_super_likely",
                 "target_score": int(diagnostics_meta["target_score"]),
                 "target_gap": int(diagnostics_meta["reverse_target_gap"]),
+                "effective_top_n": int(common_n),
                 **diagnostics_score,
             }
         )
@@ -240,7 +262,9 @@ def main() -> None:
         "history_rows": int(len(history)),
         "cutoff_start_date": cutoff_start_date,
         "holdout_steps": int(eff_holdout),
-        "top_n": int(args.top_n),
+        "requested_top_n": int(args.top_n),
+        "effective_top_n_min": int(step_frame["effective_top_n"].min()) if not step_frame.empty else 0,
+        "effective_top_n_max": int(step_frame["effective_top_n"].max()) if not step_frame.empty else 0,
         "branch_mode": str(args.branch_mode),
     }
     method_summaries: dict[str, dict[str, float | int]] = {}
@@ -282,7 +306,11 @@ def main() -> None:
     )
 
     print("SHORTLIST BENCHMARK")
-    print(f"Rows: {len(history)}  Holdout: {eff_holdout}  top_n={args.top_n}  branch_mode={args.branch_mode}")
+    print(
+        f"Rows: {len(history)}  Holdout: {eff_holdout}  requested_top_n={args.top_n}  "
+        f"effective_top_n={benchmark['effective_top_n_min']}..{benchmark['effective_top_n_max']}  "
+        f"branch_mode={args.branch_mode}"
+    )
     for method, summary in method_summaries.items():
         print(
             f"{method}: recall_at_5={summary['recall_at_5']:.4f}  "
