@@ -37,6 +37,20 @@ DEFAULT_BATCH_SIZE = 200_000
 DEFAULT_THRESHOLD = 0.5
 
 
+def is_prime_scalar(value: int) -> bool:
+    n = int(value)
+    if n < 2:
+        return False
+    if n % 2 == 0:
+        return n == 2
+    factor = 3
+    while factor * factor <= n:
+        if n % factor == 0:
+            return False
+        factor += 2
+    return True
+
+
 @dataclass
 class ResidualDistribution:
     family: str
@@ -64,6 +78,7 @@ class ArithmeticBranchSummary:
     raw_rows: int
     rows: int
     cutoff_start_date: str
+    branch_mode: str
     ratio_mode: str
     modulus: int | None
     branch_threshold: float
@@ -73,6 +88,7 @@ class ArithmeticBranchSummary:
     last_coprime: bool
     upper_count: int
     lower_count: int
+    prime_ceiling_count: int
     gcd_coprime_share: float
     gcd_rule_match_rate: float
     predicted_next_poi: float
@@ -110,6 +126,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_THRESHOLD,
         help="Branch threshold on the totient ratio. upper if ratio >= threshold.",
+    )
+    parser.add_argument(
+        "--branch-mode",
+        choices=("classic", "prime-pruned"),
+        default="classic",
+        help="Use the original upper/lower split or exclude prime-ceiling rows from the upper branch model.",
     )
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--top-n", type=int, default=500)
@@ -170,6 +192,14 @@ def build_branch_frame(
     actual_branch_change = np.zeros(len(poi), dtype=int)
     gcd_expected_change = np.zeros(len(poi), dtype=int)
     branch = np.where(ratio >= threshold, "upper", "lower")
+    prime_ceiling = np.fromiter(
+        (is_prime_scalar(value) for value in ratio_base),
+        dtype=bool,
+        count=len(ratio_base),
+    )
+    if ratio_mode != "raw":
+        prime_ceiling[:] = False
+    pruned_branch = np.where(prime_ceiling, "prime_ceiling", np.where(branch == "upper", "composite_upper", "lower"))
 
     for idx in range(1, len(poi)):
         gcd_prev[idx] = gcd(int(poi[idx]), int(poi[idx - 1]))
@@ -184,6 +214,8 @@ def build_branch_frame(
             "ratio_base": ratio_base.astype(int),
             "totient_ratio": ratio.astype(float),
             "branch": branch,
+            "prime_ceiling": prime_ceiling.astype(int),
+            "pruned_branch": pruned_branch.astype(object),
             "gcd_prev": gcd_prev,
             "coprime_prev": coprime_prev.astype(int),
             "actual_branch_change": actual_branch_change.astype(int),
@@ -197,10 +229,12 @@ def build_training_frame(branch_frame: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, float | int | str]] = []
     poi = branch_frame["poi"].to_numpy(dtype=float)
     ratio = branch_frame["totient_ratio"].to_numpy(dtype=float)
-    branch = branch_frame["branch"].to_numpy(dtype=object)
+    branch = branch_frame["model_branch"].to_numpy(dtype=object)
     coprime_prev = branch_frame["coprime_prev"].to_numpy(dtype=int)
 
     for idx in range(2, len(branch_frame)):
+        if str(branch[idx]) == "prime_ceiling":
+            continue
         rows.append(
             {
                 "target_idx": idx,
@@ -212,6 +246,26 @@ def build_training_frame(branch_frame: pd.DataFrame) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def apply_branch_mode(branch_frame: pd.DataFrame, *, branch_mode: str) -> pd.DataFrame:
+    frame = branch_frame.copy()
+    if branch_mode == "prime-pruned":
+        frame["model_branch"] = np.where(frame["pruned_branch"] == "composite_upper", "upper", frame["pruned_branch"])
+    else:
+        frame["model_branch"] = frame["branch"]
+    return frame
+
+
+def resolve_current_branch(branch_frame: pd.DataFrame, *, branch_mode: str) -> str:
+    series = branch_frame["model_branch"].astype(str)
+    if branch_mode != "prime-pruned":
+        return str(series.iloc[-1])
+
+    usable = series[series != "prime_ceiling"]
+    if usable.empty:
+        raise ValueError("No composite rows available after prime pruning.")
+    return str(usable.iloc[-1])
 
 
 def fit_residual_distribution(resid: np.ndarray) -> ResidualDistribution:
@@ -428,12 +482,15 @@ def save_branch_plot(
     lower_resid: np.ndarray,
     predicted_score: int,
     next_branch: str,
+    threshold: float,
+    branch_mode: str,
     out_path: Path,
 ) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(16, 10), constrained_layout=True)
 
-    upper_mask = branch_frame["branch"] == "upper"
-    lower_mask = ~upper_mask
+    upper_mask = branch_frame["model_branch"] == "upper"
+    lower_mask = branch_frame["model_branch"] == "lower"
+    prime_mask = branch_frame["model_branch"] == "prime_ceiling"
     delta = branch_frame["draw_date"].diff().dropna().median()
     if pd.isna(delta):
         delta = pd.Timedelta(days=3)
@@ -455,6 +512,15 @@ def save_branch_plot(
         color="tomato",
         label="upper branch",
     )
+    if bool(prime_mask.any()):
+        ax1.scatter(
+            branch_frame.loc[prime_mask, "draw_date"],
+            branch_frame.loc[prime_mask, "poi"],
+            s=18,
+            color="dimgray",
+            marker="x",
+            label="prime ceiling",
+        )
     ax1.scatter(
         [next_date],
         [predicted_score],
@@ -464,31 +530,41 @@ def save_branch_plot(
         label=f"next branch={next_branch}, score={predicted_score}",
         zorder=4,
     )
-    ax1.set_title("POI branch path with next-score forecast")
+    ax1.set_title(f"POI branch path with next-score forecast ({branch_mode})")
     ax1.set_ylabel("poi")
     ax1.legend(fontsize=8)
 
     ax2 = axes[0, 1]
     ax2.plot(branch_frame["draw_date"], branch_frame["totient_ratio"], color="navy", lw=0.9)
-    ax2.axhline(0.5, color="gray", ls="--", lw=1, label="default threshold 0.5")
+    ax2.axhline(threshold, color="gray", ls="--", lw=1, label=f"threshold {threshold:.3f}")
     ax2.fill_between(
         branch_frame["draw_date"],
         branch_frame["totient_ratio"],
-        0.5,
-        where=branch_frame["totient_ratio"] >= 0.5,
+        threshold,
+        where=branch_frame["totient_ratio"] >= threshold,
         color="tomato",
         alpha=0.25,
     )
     ax2.fill_between(
         branch_frame["draw_date"],
         branch_frame["totient_ratio"],
-        0.5,
-        where=branch_frame["totient_ratio"] < 0.5,
+        threshold,
+        where=branch_frame["totient_ratio"] < threshold,
         color="steelblue",
         alpha=0.25,
     )
     ax2.set_title("Normalized Euler-totient ratio")
     ax2.set_ylabel("phi(x) / x")
+    if bool(prime_mask.any()):
+        ax2.scatter(
+            branch_frame.loc[prime_mask, "draw_date"],
+            branch_frame.loc[prime_mask, "totient_ratio"],
+            s=14,
+            color="dimgray",
+            marker="x",
+            alpha=0.85,
+            label="prime ceiling",
+        )
     ax2.legend(fontsize=8)
 
     ax3 = axes[1, 0]
@@ -532,6 +608,132 @@ def save_branch_plot(
     plt.close(fig)
 
 
+def save_pruned_branch_plot(
+    branch_frame: pd.DataFrame,
+    *,
+    threshold: float,
+    out_path: Path,
+) -> None:
+    fig, axes = plt.subplots(2, 2, figsize=(16, 10), constrained_layout=True)
+
+    prime_mask = branch_frame["prime_ceiling"].astype(bool)
+    composite_upper_mask = branch_frame["pruned_branch"] == "composite_upper"
+    lower_mask = branch_frame["pruned_branch"] == "lower"
+
+    ax1 = axes[0, 0]
+    ax1.plot(branch_frame["draw_date"], branch_frame["poi"], color="lightgray", lw=0.7, alpha=0.8)
+    ax1.scatter(
+        branch_frame.loc[lower_mask, "draw_date"],
+        branch_frame.loc[lower_mask, "poi"],
+        s=12,
+        color="steelblue",
+        label="lower composite",
+    )
+    ax1.scatter(
+        branch_frame.loc[composite_upper_mask, "draw_date"],
+        branch_frame.loc[composite_upper_mask, "poi"],
+        s=14,
+        color="darkorange",
+        label="upper composite",
+    )
+    ax1.scatter(
+        branch_frame.loc[prime_mask, "draw_date"],
+        branch_frame.loc[prime_mask, "poi"],
+        s=18,
+        color="dimgray",
+        marker="x",
+        label="prime ceiling",
+    )
+    ax1.set_title("POI path with prime-ceiling pruning")
+    ax1.set_ylabel("poi")
+    ax1.legend(fontsize=8)
+
+    ax2 = axes[0, 1]
+    ax2.plot(branch_frame["draw_date"], branch_frame["totient_ratio"], color="navy", lw=0.8, alpha=0.6)
+    ax2.axhline(threshold, color="gray", ls="--", lw=1, label=f"threshold {threshold:.3f}")
+    ax2.scatter(
+        branch_frame.loc[lower_mask, "draw_date"],
+        branch_frame.loc[lower_mask, "totient_ratio"],
+        s=10,
+        color="steelblue",
+        alpha=0.7,
+        label="lower composite",
+    )
+    ax2.scatter(
+        branch_frame.loc[composite_upper_mask, "draw_date"],
+        branch_frame.loc[composite_upper_mask, "totient_ratio"],
+        s=12,
+        color="darkorange",
+        alpha=0.8,
+        label="upper composite",
+    )
+    ax2.scatter(
+        branch_frame.loc[prime_mask, "draw_date"],
+        branch_frame.loc[prime_mask, "totient_ratio"],
+        s=16,
+        color="dimgray",
+        marker="x",
+        alpha=0.9,
+        label="prime ceiling",
+    )
+    ax2.set_title("Totient ratio with primes removed from the upper branch")
+    ax2.set_ylabel("phi(x) / x")
+    ax2.legend(fontsize=8)
+
+    ax3 = axes[1, 0]
+    composite_mask = ~prime_mask
+    ax3.scatter(
+        branch_frame.loc[composite_mask, "ratio_base"],
+        branch_frame.loc[composite_mask, "totient_ratio"],
+        s=12,
+        color="steelblue",
+        alpha=0.5,
+        label="composite bases",
+    )
+    ax3.scatter(
+        branch_frame.loc[prime_mask, "ratio_base"],
+        branch_frame.loc[prime_mask, "totient_ratio"],
+        s=18,
+        color="dimgray",
+        marker="x",
+        alpha=0.85,
+        label="prime bases",
+    )
+    x_max = int(branch_frame["ratio_base"].max())
+    x_grid = np.arange(2, x_max + 1)
+    ax3.plot(x_grid, 1.0 - 1.0 / x_grid, color="darkred", lw=1.5, label="prime ceiling 1 - 1/x")
+    ax3.axhline(threshold, color="gray", ls="--", lw=1)
+    ax3.set_title("Normalized prime ceiling vs composite scatter")
+    ax3.set_xlabel("ratio base x")
+    ax3.set_ylabel("phi(x) / x")
+    ax3.legend(fontsize=8)
+
+    ax4 = axes[1, 1]
+    counts = pd.Series(
+        {
+            "lower": int(lower_mask.sum()),
+            "upper composite": int(composite_upper_mask.sum()),
+            "prime ceiling": int(prime_mask.sum()),
+        }
+    )
+    shares = counts / max(int(len(branch_frame)), 1)
+    ax4.bar(
+        counts.index.tolist(),
+        shares.to_numpy(dtype=float),
+        color=["steelblue", "darkorange", "dimgray"],
+        alpha=0.8,
+    )
+    for xpos, share, count in zip(range(len(counts)), shares.to_numpy(dtype=float), counts.to_numpy(dtype=int)):
+        ax4.text(xpos, share + 0.01, f"{count}", ha="center", va="bottom", fontsize=9)
+    ax4.set_ylim(0.0, min(1.0, float(shares.max()) + 0.12))
+    ax4.set_title("Pruned class share")
+    ax4.set_ylabel("share of rows")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def excel_safe(frame: pd.DataFrame) -> pd.DataFrame:
     cleaned = frame.replace([np.inf, -np.inf], np.nan)
     return cleaned.where(pd.notna(cleaned), "")
@@ -556,13 +758,14 @@ def main() -> None:
         modulus=args.modulus,
         threshold=args.threshold,
     )
+    branch_frame = apply_branch_mode(branch_frame, branch_mode=args.branch_mode)
     pair_diag = build_pair_z_diagnostics(history)
     training = build_training_frame(branch_frame)
 
     upper_model, upper_fit, upper_resid = fit_branch_model(training, "upper")
     lower_model, lower_fit, lower_resid = fit_branch_model(training, "lower")
 
-    current_branch = str(branch_frame["branch"].iloc[-1])
+    current_branch = resolve_current_branch(branch_frame, branch_mode=args.branch_mode)
     last_gcd = int(branch_frame["gcd_prev"].iloc[-1])
     last_coprime = bool(branch_frame["coprime_prev"].iloc[-1])
     next_branch = "lower" if current_branch == "upper" and last_coprime else current_branch
@@ -613,13 +816,21 @@ def main() -> None:
         lower_resid=lower_resid,
         predicted_score=predicted_score,
         next_branch=next_branch,
+        threshold=float(args.threshold),
+        branch_mode=str(args.branch_mode),
         out_path=out_dir / "branch_selector.png",
+    )
+    save_pruned_branch_plot(
+        branch_frame,
+        threshold=float(args.threshold),
+        out_path=out_dir / "branch_selector_pruned.png",
     )
 
     summary = ArithmeticBranchSummary(
         raw_rows=len(raw_history),
         rows=len(branch_frame),
         cutoff_start_date=cutoff_start_date,
+        branch_mode=str(args.branch_mode),
         ratio_mode=args.ratio_mode,
         modulus=eff_modulus,
         branch_threshold=float(args.threshold),
@@ -627,8 +838,9 @@ def main() -> None:
         next_branch=next_branch,
         gcd_last=last_gcd,
         last_coprime=last_coprime,
-        upper_count=int((branch_frame["branch"] == "upper").sum()),
-        lower_count=int((branch_frame["branch"] == "lower").sum()),
+        upper_count=int((branch_frame["model_branch"] == "upper").sum()),
+        lower_count=int((branch_frame["model_branch"] == "lower").sum()),
+        prime_ceiling_count=int((branch_frame["model_branch"] == "prime_ceiling").sum()),
         gcd_coprime_share=float(branch_frame["coprime_prev"].iloc[1:].mean()),
         gcd_rule_match_rate=float(
             np.mean(
@@ -657,6 +869,7 @@ def main() -> None:
                 "raw_rows": summary.raw_rows,
                 "rows": summary.rows,
                 "cutoff_start_date": summary.cutoff_start_date,
+                "branch_mode": summary.branch_mode,
                 "ratio_mode": summary.ratio_mode,
                 "modulus": summary.modulus,
                 "branch_threshold": summary.branch_threshold,
@@ -666,6 +879,7 @@ def main() -> None:
                 "last_coprime": int(summary.last_coprime),
                 "upper_count": summary.upper_count,
                 "lower_count": summary.lower_count,
+                "prime_ceiling_count": summary.prime_ceiling_count,
                 "gcd_coprime_share": summary.gcd_coprime_share,
                 "gcd_rule_match_rate": summary.gcd_rule_match_rate,
                 "predicted_next_poi": summary.predicted_next_poi,
@@ -697,11 +911,11 @@ def main() -> None:
     print(
         f"Rows: {summary.rows} of {summary.raw_rows}  "
         f"Cutoff: {summary.cutoff_start_date}  "
-        f"ratio={summary.ratio_mode}  modulus={summary.modulus}"
+        f"ratio={summary.ratio_mode}  modulus={summary.modulus}  branch_mode={summary.branch_mode}"
     )
     print(
         f"Branch split: upper={summary.upper_count}  lower={summary.lower_count}  "
-        f"threshold={summary.branch_threshold:.3f}"
+        f"prime_ceiling={summary.prime_ceiling_count}  threshold={summary.branch_threshold:.3f}"
     )
     print(
         f"GCD rule: coprime share={summary.gcd_coprime_share:.3f}  "
@@ -726,6 +940,7 @@ def main() -> None:
         f"saved_all={summary.exact_matches_saved}  nearest_gap={summary.nearest_score_gap}"
     )
     print(f"Wrote: {out_dir / 'branch_selector.png'}")
+    print(f"Wrote: {out_dir / 'branch_selector_pruned.png'}")
     print(f"Wrote: {out_dir / 'branch_superlikely_shortlist.csv'}")
     print(f"Wrote: {out_dir / 'branch_summary.json'}")
 
