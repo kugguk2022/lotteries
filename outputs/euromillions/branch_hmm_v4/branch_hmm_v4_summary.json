@@ -1,0 +1,224 @@
+{
+  "source": "real",
+  "rows": 1003,
+  "seed": 42,
+  "n_iter": 5,
+  "history_window": 50,
+  "data_meta": {
+    "history_path": "C:\\Users\\inger\\Documents\\coding\\lotteries\\data\\euromillions.csv",
+    "effective_start_date": "2016-09-27",
+    "rows": 1003,
+    "main_n": 50,
+    "star_n": 12,
+    "pair_system": "full21",
+    "pair_events_per_draw": 21,
+    "pair_state_space": 1891,
+    "block_events_per_draw": {
+      "main_main": 10,
+      "main_star": 10,
+      "star_star": 1
+    },
+    "glm_aic": 11591.54192765775,
+    "phi_poi_corr": 0.04044272980586488,
+    "poi_block_means": {
+      "main_main": 51.0,
+      "main_star": 93.97108673978066,
+      "star_star": 8.773678963110669,
+      "total": 153.74476570289133
+    }
+  },
+  "method": {
+    "model_version": "branch_hmm_v4",
+    "recommended_status": "current",
+    "latent_state_model": "2-state HMM with multivariate-t emissions",
+    "pair_system": "full21",
+    "pair_events_per_draw": 21,
+    "pair_state_space": 1891,
+    "forecast_model": "empirical_branch_growth",
+    "forecast_bounds": "branch support intersected with recent 12-draw support",
+    "plot_density_model": "empirical branch POI pmf",
+    "notes": [
+      "v3 retained for historical comparison",
+      "v4 is the transparent real-data-first entrypoint",
+      "POI forecast is bounded to recent and branch support rather than using the latent-state mean"
+    ]
+  },
+  "versions": {
+    "no_pruning": {
+      "forecast": {
+        "P_upper": 0.5218166708923248,
+        "predicted_branch": "upper",
+        "superlikely_poi": 271.0,
+        "means": {
+          "0": [
+            152.380716409878,
+            1.3371990439709407,
+            0.41632450639833163,
+            0.44038382243080965
+          ],
+          "1": [
+            155.4278835395834,
+            -1.6499869716166273,
+            0.8411796628397759,
+            0.8352608136909969
+          ]
+        },
+        "trans": [
+          [
+            0.4781746031746032,
+            0.5218253968253969
+          ],
+          [
+            0.5258964143426295,
+            0.47410358565737054
+          ]
+        ],
+        "last_state_posterior": [
+          0.9998171500020874,
+          0.00018284999791355405
+        ],
+        "forecast_mode": "empirical_branch_growth",
+        "last_poi": 284.0,
+        "mode_delta": -13.0,
+        "bounded_support": [
+          251,
+          300
+        ],
+        "branch_poi_support": [
+          247,
+          325
+        ],
+        "poi_interval_80": [
+          251.0,
+          297.0
+        ],
+        "empirical_poi_support": [
+          247,
+          249,
+          251,
+          257,
+          267,
+          271,
+          273,
+          277,
+          281,
+          283,
+          285,
+          287,
+          297,
+          299,
+          303,
+          325
+        ],
+        "empirical_poi_probs": [
+          0.04083570750237417,
+          0.028490028490028487,
+          0.08831908831908833,
+          0.04653371320037986,
+          0.08072174738841405,
+          0.06837606837606837,
+          0.056980056980056974,
+          0.04938271604938271,
+          0.06837606837606837,
+          0.13675213675213674,
+          0.08262108262108263,
+          0.042735042735042736,
+          0.12535612535612536,
+          0.034188034188034185,
+          0.025641025641025644,
+          0.024691358024691357
+        ]
+      },
+      "plot": "C:\\Users\\inger\\Documents\\coding\\lotteries\\outputs\\euromillions\\branch_hmm_v4\\branch_hmm_v4_no_pruning_results.png"
+    },
+    "minimal_pruning": {
+      "forecast": {
+        "P_upper": 0.5218187742711277,
+        "predicted_branch": "upper",
+        "superlikely_poi": 271.0,
+        "means": {
+          "0": [
+            152.93731690905702,
+            1.9446390148390833,
+            0.41464126008662283,
+            0.4398664402358113,
+            1.2185947223330466e-12
+          ],
+          "1": [
+            154.7172734245367,
+            -2.342162713204189,
+            0.8375979952565991,
+            0.8306707320766757,
+            0.44615884515238396
+          ]
+        },
+        "trans": [
+          [
+            0.4781746031746032,
+            0.5218253968253969
+          ],
+          [
+            0.5258964143426295,
+            0.47410358565737054
+          ]
+        ],
+        "last_state_posterior": [
+          0.9998612258396626,
+          0.00013877416034880122
+        ],
+        "forecast_mode": "empirical_branch_growth",
+        "last_poi": 284.0,
+        "mode_delta": -13.0,
+        "bounded_support": [
+          251,
+          300
+        ],
+        "branch_poi_support": [
+          247,
+          325
+        ],
+        "poi_interval_80": [
+          251.0,
+          297.0
+        ],
+        "empirical_poi_support": [
+          247,
+          249,
+          251,
+          257,
+          267,
+          271,
+          273,
+          277,
+          281,
+          283,
+          285,
+          287,
+          297,
+          299,
+          303,
+          325
+        ],
+        "empirical_poi_probs": [
+          0.04083570750237417,
+          0.028490028490028487,
+          0.08831908831908833,
+          0.04653371320037986,
+          0.08072174738841405,
+          0.06837606837606837,
+          0.056980056980056974,
+          0.04938271604938271,
+          0.06837606837606837,
+          0.13675213675213674,
+          0.08262108262108263,
+          0.042735042735042736,
+          0.12535612535612536,
+          0.034188034188034185,
+          0.025641025641025644,
+          0.024691358024691357
+        ]
+      },
+      "plot": "C:\\Users\\inger\\Documents\\coding\\lotteries\\outputs\\euromillions\\branch_hmm_v4\\branch_hmm_v4_minimal_pruning_results.png"
+    }
+  }
+}
