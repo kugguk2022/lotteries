@@ -4,6 +4,30 @@
 
 Lottery data playground for EuroMillions, Totoloto, and EuroDreams. The repo ships a small typed public API plus labs for modelling, bankroll experiments, and scraping. Everything is research-focused; use it responsibly.
 
+## Best Current EuroMillions Result
+
+The best validated forecasting mode in this repo is currently the `classic` arithmetic-branch mode.
+
+- Best holdout result so far: one-step walk-forward RMSE `26.915` over the last `52` draws for `classic`.
+- Comparison result: `prime-pruned` looked slightly better on internal composite-only fit, but lost on true holdout (`26.972` RMSE), so it remains a diagnostic view rather than the default forecasting mode.
+- Same-budget shortlist benchmark result: `branch_classic` was tied with `diagnostics3_super_likely` on main-ball recall over the last `3` draws, while `diagnostics3_super_likely` did better on stars.
+
+Run the current best-validated branch check:
+
+```bash
+python -m euromillions.arithmetic_branch --batch-size 2000 --top-n 25 --max-save-matches 5000 --validity-holdout 52
+```
+
+That command refreshes the branch comparison, validity backtest, and selector artifacts under `outputs/euromillions/arithmetic_branch/`.
+
+Run the fair shortlist comparison:
+
+```bash
+python -m euromillions.branch_shortlist_benchmark --holdout 3 --top-n 25 --batch-size 20000 --out-dir outputs/euromillions/branch_shortlist_benchmark_fair_holdout3
+```
+
+That benchmark writes the comparison summary and per-step results under `outputs/euromillions/branch_shortlist_benchmark_fair_holdout3/`.
+
 ## Quickstart
 
 ```bash
@@ -92,11 +116,10 @@ python -m euromillions.infer --history data/euromillions.csv --n 10 --out runs/e
 
 ## Current Benchmark Snapshot
 
-Recent EuroMillions branch-selection work added a classic vs prime-pruned Euler-totient branch comparison plus a walk-forward validity check.
+This section keeps the supporting benchmark artifacts and exact snapshot values. The headline conclusion and the main reproduction commands are summarized at the top of this README.
 
-- Internal branch-fit comparison on composite-only targets slightly favored `prime-pruned`: shared RMSE `22.773` vs `22.807` for `classic`.
-- True one-step walk-forward validity over the last 52 draws favored `classic`: RMSE `26.915` vs `26.972` for `prime-pruned`.
-- Operational conclusion: keep `classic` as the default forecasting mode, and use `prime-pruned` as a structural diagnostic view rather than the forecasting default.
+- Internal composite-only fit snapshot: `prime-pruned` RMSE `22.773` vs `22.807` for `classic`.
+- Holdout validity snapshot over the last `52` draws: `classic` RMSE `26.915` vs `26.972` for `prime-pruned`.
 
 Artifacts:
 
