@@ -1,0 +1,63 @@
+{
+  "raw_rows": 1943,
+  "rows": 1003,
+  "cutoff_start_date": "2016-09-27",
+  "ratio_mode": "raw",
+  "modulus": null,
+  "branch_threshold": 0.5,
+  "current_branch": "lower",
+  "next_branch": "upper",
+  "gcd_last": 1,
+  "last_coprime": true,
+  "upper_count": 500,
+  "lower_count": 503,
+  "gcd_coprime_share": 0.6177644710578842,
+  "gcd_rule_match_rate": 0.6826347305389222,
+  "predicted_next_poi": 278.7609527242403,
+  "predicted_score": 279,
+  "predicted_interval_80": [
+    252.86668369181407,
+    304.6552217566666
+  ],
+  "predicted_interval_95": [
+    231.74053632742266,
+    325.781369121058
+  ],
+  "exact_match_count": 1903584,
+  "exact_matches_saved": false,
+  "nearest_score_gap": 0,
+  "upper_fit": {
+    "branch": "upper",
+    "count": 498,
+    "regression_intercept": 10.293671064491644,
+    "regression_prev_poi": 0.9566418810483741,
+    "regression_prev_ratio": -5.127248062492353,
+    "regression_prev_coprime": 0.3721760010087585,
+    "rmse": 22.61509240387316,
+    "mae": 16.6292046145235,
+    "selected_distribution": {
+      "family": "student_t",
+      "loc": -1.0636719084739807,
+      "scale": 16.84443374428069,
+      "df": 3.946150316585579,
+      "aic": 4497.466201467887
+    }
+  },
+  "lower_fit": {
+    "branch": "lower",
+    "count": 503,
+    "regression_intercept": 4.492256324918621,
+    "regression_prev_poi": 0.9575194572336023,
+    "regression_prev_ratio": 1.7398815297302974,
+    "regression_prev_coprime": 1.063308314075912,
+    "rmse": 22.801066503849118,
+    "mae": 17.651502647859278,
+    "selected_distribution": {
+      "family": "student_t",
+      "loc": -0.4770581889364224,
+      "scale": 20.115203753116734,
+      "df": 8.731631274394127,
+      "aic": 4571.181240470886
+    }
+  }
+}
