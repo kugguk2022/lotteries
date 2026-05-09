@@ -10,8 +10,22 @@
     "rows": 1003,
     "main_n": 50,
     "star_n": 12,
+    "pair_system": "full21",
+    "pair_events_per_draw": 21,
+    "pair_state_space": 1891,
+    "block_events_per_draw": {
+      "main_main": 10,
+      "main_star": 10,
+      "star_star": 1
+    },
     "glm_aic": 11591.54192765775,
-    "phi_poi_corr": 0.04044272980586488
+    "phi_poi_corr": 0.04044272980586488,
+    "poi_block_means": {
+      "main_main": 51.0,
+      "main_star": 93.97108673978066,
+      "star_star": 8.773678963110669,
+      "total": 153.74476570289133
+    }
   },
   "versions": {
     "no_pruning": {

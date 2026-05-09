@@ -432,6 +432,58 @@ def build_phi_design(phi_values: np.ndarray) -> pd.DataFrame:
     )
 
 
+def build_pair_block_features(
+    draws: np.ndarray,
+    *,
+    main_n: int,
+    include_current: bool = True,
+) -> dict[str, np.ndarray]:
+    draws = np.asarray(draws, dtype=int)
+    universe_size = int(draws.max())
+    pair_counts = np.zeros((universe_size + 1, universe_size + 1), dtype=np.int32)
+    main_main_poi = np.zeros(len(draws), dtype=float)
+    main_star_poi = np.zeros(len(draws), dtype=float)
+    star_star_poi = np.zeros(len(draws), dtype=float)
+
+    for row_idx, raw_draw in enumerate(draws):
+        draw = np.sort(np.asarray(raw_draw, dtype=int))
+        pair_list = [(int(left), int(right)) for left_idx, left in enumerate(draw) for right in draw[left_idx + 1 :]]
+        if include_current:
+            for left, right in pair_list:
+                pair_counts[left, right] += 1
+                pair_counts[right, left] += 1
+
+        mm_sum = 0.0
+        ms_sum = 0.0
+        ss_sum = 0.0
+        for left, right in pair_list:
+            pair_value = float(pair_counts[left, right])
+            left_is_main = left <= main_n
+            right_is_main = right <= main_n
+            if left_is_main and right_is_main:
+                mm_sum += pair_value
+            elif (left_is_main and not right_is_main) or (right_is_main and not left_is_main):
+                ms_sum += pair_value
+            else:
+                ss_sum += pair_value
+
+        main_main_poi[row_idx] = mm_sum
+        main_star_poi[row_idx] = ms_sum
+        star_star_poi[row_idx] = ss_sum
+
+        if not include_current:
+            for left, right in pair_list:
+                pair_counts[left, right] += 1
+                pair_counts[right, left] += 1
+
+    return {
+        "main_main_poi": main_main_poi,
+        "main_star_poi": main_star_poi,
+        "star_star_poi": star_star_poi,
+        "total_poi": main_main_poi + main_star_poi + star_star_poi,
+    }
+
+
 def load_real_feature_frame(history_path: Path, start_date: str) -> tuple[pd.DataFrame, dict[str, object]]:
     history = load_history(history_path)
     history, effective_start_date = apply_start_date_cutoff(
@@ -441,6 +493,7 @@ def load_real_feature_frame(history_path: Path, start_date: str) -> tuple[pd.Dat
     )
     draws, main_n, star_n = encode_full7_draws(history)
     features = build_pair_features_generic(draws, universe_size=main_n + star_n, include_current=True)
+    block_features = build_pair_block_features(draws, main_n=main_n, include_current=True)
     poi = features.poi.astype(float)
     poi_int = np.maximum(np.rint(poi).astype(int), 1)
     phi_lookup = euler_phi_upto(int(poi_int.max()) + 1).astype(float)
@@ -463,6 +516,9 @@ def load_real_feature_frame(history_path: Path, start_date: str) -> tuple[pd.Dat
         {
             "date": history["draw_date"].reset_index(drop=True),
             "poi": poi,
+            "poi_main_main": block_features["main_main_poi"],
+            "poi_main_star": block_features["main_star_poi"],
+            "poi_star_star": block_features["star_star_poi"],
             "residual": residual,
             "phi_ratio": phi_ratio,
             "gcd_flag": gcd_flag,
@@ -477,8 +533,22 @@ def load_real_feature_frame(history_path: Path, start_date: str) -> tuple[pd.Dat
         "rows": int(len(frame)),
         "main_n": int(main_n),
         "star_n": int(star_n),
+        "pair_system": "full21",
+        "pair_events_per_draw": 21,
+        "pair_state_space": 1891,
+        "block_events_per_draw": {
+            "main_main": 10,
+            "main_star": 10,
+            "star_star": 1,
+        },
         "glm_aic": float(glm.aic),
         "phi_poi_corr": float(np.corrcoef(phi_ratio, poi)[0, 1]),
+        "poi_block_means": {
+            "main_main": float(frame["poi_main_main"].mean()),
+            "main_star": float(frame["poi_main_star"].mean()),
+            "star_star": float(frame["poi_star_star"].mean()),
+            "total": float(frame["poi"].mean()),
+        },
     }
     return frame, meta
 
