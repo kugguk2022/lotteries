@@ -116,7 +116,7 @@ Current fair benchmark snapshot on the last 3 draws:
 - Both methods used the same realized ticket budget: `27` tickets total.
 - Main-ball recall was tied: recall@5 `0.1333` for `branch_classic` and `0.1333` for `diagnostics3_super_likely`.
 - Exact `5+2` accuracy was `0.0000` for both methods in this small window.
-- `diagnostics3_super_likely` captured more stars in the same-budget comparison: star recall `0.6667` vs `0.0000` for `branch_classic`.
+- `diagnostics3_super_likely` captured more stars in the same-sample comparison: star recall `0.6667` vs `0.0000` for `branch_classic`.
 - Current interpretation: the branch shortlist is not yet materially better than the standard diagnostics shortlist on a fair, tiny holdout; it appears roughly tied on main-ball recovery and worse on stars in this small sample.
 
 Shortlist benchmark artifacts:
