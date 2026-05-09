@@ -130,7 +130,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--branch-mode",
         choices=("classic", "prime-pruned"),
-        default="classic",
+        default="prime-pruned",
         help="Use the original upper/lower split or exclude prime-ceiling rows from the upper branch model.",
     )
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
@@ -266,6 +266,126 @@ def resolve_current_branch(branch_frame: pd.DataFrame, *, branch_mode: str) -> s
     if usable.empty:
         raise ValueError("No composite rows available after prime pruning.")
     return str(usable.iloc[-1])
+
+
+def evaluate_branch_mode(
+    base_branch_frame: pd.DataFrame,
+    *,
+    branch_mode: str,
+) -> dict[str, object]:
+    frame = apply_branch_mode(base_branch_frame, branch_mode=branch_mode)
+    training = build_training_frame(frame)
+    upper_model, upper_fit, upper_resid = fit_branch_model(training, "upper")
+    lower_model, lower_fit, lower_resid = fit_branch_model(training, "lower")
+
+    current_branch = resolve_current_branch(frame, branch_mode=branch_mode)
+    last_coprime = bool(frame["coprime_prev"].iloc[-1])
+    next_branch = "lower" if current_branch == "upper" and last_coprime else current_branch
+    if current_branch == "lower" and last_coprime:
+        next_branch = "upper"
+
+    predicted_center, conditional_mean, interval_80, interval_95 = predict_branch_value(
+        upper_model if next_branch == "upper" else lower_model,
+        upper_fit if next_branch == "upper" else lower_fit,
+        prev_poi=float(frame["poi"].iloc[-1]),
+        prev_ratio=float(frame["totient_ratio"].iloc[-1]),
+        prev_coprime=int(frame["coprime_prev"].iloc[-1]),
+    )
+    predicted_score = max(1, int(round(predicted_center)))
+
+    return {
+        "frame": frame,
+        "training": training,
+        "upper_model": upper_model,
+        "upper_fit": upper_fit,
+        "upper_resid": upper_resid,
+        "lower_model": lower_model,
+        "lower_fit": lower_fit,
+        "lower_resid": lower_resid,
+        "current_branch": current_branch,
+        "next_branch": next_branch,
+        "predicted_center": float(predicted_center),
+        "conditional_mean": float(conditional_mean),
+        "interval_80": [float(interval_80[0]), float(interval_80[1])],
+        "interval_95": [float(interval_95[0]), float(interval_95[1])],
+        "predicted_score": int(predicted_score),
+        "metrics": {
+            "upper_count": int((frame["model_branch"] == "upper").sum()),
+            "lower_count": int((frame["model_branch"] == "lower").sum()),
+            "prime_ceiling_count": int((frame["model_branch"] == "prime_ceiling").sum()),
+            "training_rows": int(len(training)),
+            "current_branch": current_branch,
+            "next_branch": next_branch,
+            "predicted_next_poi": float(predicted_center),
+            "predicted_score": int(predicted_score),
+            "upper_rmse": float(upper_fit.rmse),
+            "upper_mae": float(upper_fit.mae),
+            "lower_rmse": float(lower_fit.rmse),
+            "lower_mae": float(lower_fit.mae),
+        },
+    }
+
+
+def predict_rows_for_training(
+    model: sm.regression.linear_model.RegressionResultsWrapper,
+    summary: BranchFitSummary,
+    subset: pd.DataFrame,
+) -> np.ndarray:
+    preds: list[float] = []
+    for row in subset.itertuples(index=False):
+        center, _, _, _ = predict_branch_value(
+            model,
+            summary,
+            prev_poi=float(row.prev_poi),
+            prev_ratio=float(row.prev_ratio),
+            prev_coprime=int(row.prev_coprime),
+        )
+        preds.append(center)
+    return np.asarray(preds, dtype=float)
+
+
+def compare_branch_modes(base_branch_frame: pd.DataFrame) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
+    evaluations = {
+        "classic": evaluate_branch_mode(base_branch_frame, branch_mode="classic"),
+        "prime-pruned": evaluate_branch_mode(base_branch_frame, branch_mode="prime-pruned"),
+    }
+
+    shared_training = evaluations["prime-pruned"]["training"]
+    upper_mask = shared_training["target_branch"].to_numpy(dtype=object) == "upper"
+    lower_mask = ~upper_mask
+    upper_subset = shared_training.loc[upper_mask].reset_index(drop=True)
+    lower_subset = shared_training.loc[lower_mask].reset_index(drop=True)
+    actual = shared_training["target_poi"].to_numpy(dtype=float)
+
+    shared_compare: dict[str, dict[str, float | int]] = {}
+    for mode, evaluation in evaluations.items():
+        preds = np.empty(len(shared_training), dtype=float)
+        preds[upper_mask] = predict_rows_for_training(evaluation["upper_model"], evaluation["upper_fit"], upper_subset)
+        preds[lower_mask] = predict_rows_for_training(evaluation["lower_model"], evaluation["lower_fit"], lower_subset)
+        abs_err = np.abs(actual - preds)
+        sq_err = (actual - preds) ** 2
+        shared_compare[mode] = {
+            "shared_rows": int(len(shared_training)),
+            "shared_upper_rows": int(upper_mask.sum()),
+            "shared_lower_rows": int(lower_mask.sum()),
+            "shared_mae": float(abs_err.mean()),
+            "shared_rmse": float(np.sqrt(sq_err.mean())),
+            "shared_upper_mae": float(abs_err[upper_mask].mean()),
+            "shared_upper_rmse": float(np.sqrt(sq_err[upper_mask].mean())),
+            "shared_lower_mae": float(abs_err[lower_mask].mean()),
+            "shared_lower_rmse": float(np.sqrt(sq_err[lower_mask].mean())),
+        }
+
+    classic_rmse = float(shared_compare["classic"]["shared_rmse"])
+    pruned_rmse = float(shared_compare["prime-pruned"]["shared_rmse"])
+    report = {
+        "classic": evaluations["classic"]["metrics"],
+        "prime-pruned": evaluations["prime-pruned"]["metrics"],
+        "comparison_on_pruned_targets": shared_compare,
+        "recommended_mode": "prime-pruned" if pruned_rmse <= classic_rmse else "classic",
+        "recommendation_basis": "lowest shared_rmse on composite-only targets",
+    }
+    return report, evaluations
 
 
 def fit_residual_distribution(resid: np.ndarray) -> ResidualDistribution:
@@ -752,39 +872,38 @@ def main() -> None:
         start_date_arg=args.start_date,
     )
 
-    branch_frame, pair_counts, poi, main_n, star_n, eff_modulus = build_branch_frame(
+    base_branch_frame, pair_counts, poi, main_n, star_n, eff_modulus = build_branch_frame(
         history,
         ratio_mode=args.ratio_mode,
         modulus=args.modulus,
         threshold=args.threshold,
     )
-    branch_frame = apply_branch_mode(branch_frame, branch_mode=args.branch_mode)
+    comparison_report, evaluations = compare_branch_modes(base_branch_frame)
+    selected_eval = evaluations[str(args.branch_mode)]
+    branch_frame = selected_eval["frame"]
     pair_diag = build_pair_z_diagnostics(history)
-    training = build_training_frame(branch_frame)
+    upper_model = selected_eval["upper_model"]
+    upper_fit = selected_eval["upper_fit"]
+    upper_resid = selected_eval["upper_resid"]
+    lower_model = selected_eval["lower_model"]
+    lower_fit = selected_eval["lower_fit"]
+    lower_resid = selected_eval["lower_resid"]
 
-    upper_model, upper_fit, upper_resid = fit_branch_model(training, "upper")
-    lower_model, lower_fit, lower_resid = fit_branch_model(training, "lower")
-
-    current_branch = resolve_current_branch(branch_frame, branch_mode=args.branch_mode)
+    current_branch = str(selected_eval["current_branch"])
     last_gcd = int(branch_frame["gcd_prev"].iloc[-1])
     last_coprime = bool(branch_frame["coprime_prev"].iloc[-1])
-    next_branch = "lower" if current_branch == "upper" and last_coprime else current_branch
-    if current_branch == "lower" and last_coprime:
-        next_branch = "upper"
+    next_branch = str(selected_eval["next_branch"])
 
     prev_poi = float(branch_frame["poi"].iloc[-1])
     prev_ratio = float(branch_frame["totient_ratio"].iloc[-1])
     prev_coprime = int(branch_frame["coprime_prev"].iloc[-1])
     chosen_model = upper_model if next_branch == "upper" else lower_model
     chosen_fit = upper_fit if next_branch == "upper" else lower_fit
-    predicted_center, conditional_mean, interval_80, interval_95 = predict_branch_value(
-        chosen_model,
-        chosen_fit,
-        prev_poi=prev_poi,
-        prev_ratio=prev_ratio,
-        prev_coprime=prev_coprime,
-    )
-    predicted_score = max(1, int(round(predicted_center)))
+    predicted_center = float(selected_eval["predicted_center"])
+    conditional_mean = float(selected_eval["conditional_mean"])
+    interval_80 = (float(selected_eval["interval_80"][0]), float(selected_eval["interval_80"][1]))
+    interval_95 = (float(selected_eval["interval_95"][0]), float(selected_eval["interval_95"][1]))
+    predicted_score = int(selected_eval["predicted_score"])
 
     exact_df, shortlist_df, exact_count, nearest_gap = search_branch_candidates(
         pair_counts,
@@ -862,6 +981,10 @@ def main() -> None:
         json.dumps(asdict(summary), indent=2),
         encoding="utf-8",
     )
+    (out_dir / "branch_mode_comparison.json").write_text(
+        json.dumps(comparison_report, indent=2),
+        encoding="utf-8",
+    )
 
     summary_frame = pd.DataFrame(
         [
@@ -895,11 +1018,25 @@ def main() -> None:
         ]
     )
     branch_fit_frame = pd.DataFrame([asdict(upper_fit), asdict(lower_fit)])
+    comparison_frame = pd.DataFrame(
+        [
+            {"mode": "classic", **comparison_report["classic"]},
+            {"mode": "prime-pruned", **comparison_report["prime-pruned"]},
+        ]
+    )
+    shared_compare_frame = pd.DataFrame(
+        [
+            {"mode": "classic", **comparison_report["comparison_on_pruned_targets"]["classic"]},
+            {"mode": "prime-pruned", **comparison_report["comparison_on_pruned_targets"]["prime-pruned"]},
+        ]
+    )
     write_excel_workbook(
         out_dir / "branch_selector.xlsx",
         [
             ("summary", excel_safe(summary_frame)),
             ("branch_fits", excel_safe(branch_fit_frame)),
+            ("mode_compare", excel_safe(comparison_frame)),
+            ("shared_compare", excel_safe(shared_compare_frame)),
             ("shortlist", excel_safe(shortlist_df)),
             ("series_tail", excel_safe(branch_frame.tail(200))),
         ],
@@ -939,9 +1076,16 @@ def main() -> None:
         f"Candidate bar: exact_matches={summary.exact_match_count}  "
         f"saved_all={summary.exact_matches_saved}  nearest_gap={summary.nearest_score_gap}"
     )
+    print(
+        "Mode compare: "
+        f"classic shared_rmse={comparison_report['comparison_on_pruned_targets']['classic']['shared_rmse']:.3f}  "
+        f"prime-pruned shared_rmse={comparison_report['comparison_on_pruned_targets']['prime-pruned']['shared_rmse']:.3f}  "
+        f"recommended={comparison_report['recommended_mode']}"
+    )
     print(f"Wrote: {out_dir / 'branch_selector.png'}")
     print(f"Wrote: {out_dir / 'branch_selector_pruned.png'}")
     print(f"Wrote: {out_dir / 'branch_superlikely_shortlist.csv'}")
+    print(f"Wrote: {out_dir / 'branch_mode_comparison.json'}")
     print(f"Wrote: {out_dir / 'branch_summary.json'}")
 
 
