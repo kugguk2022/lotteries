@@ -21,6 +21,8 @@ from scipy.stats import jarque_bera, probplot, t as t_dist
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.stats.diagnostic import acorr_ljungbox
 
+from euromillions.garch_glm_diagnostics import save_diagnostics_plot
+
 warnings.filterwarnings("ignore")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -223,16 +225,48 @@ def main():
     # Seasonal profile (for plotting)
     woy_range = np.arange(1, 53)
     seasonal_profile = np.exp(
-        glm.params["const"] +
-        glm.params["t"] * 0 +
-        glm.params.get(weekday_flag, 0) * 0 +
-        sum(glm.params.get(name, 0) * ([np.sin, np.cos][i % 2])(2 * np.pi * ((i//2)+1) * w / 52)
-            for i, name in enumerate(fourier_names))
-        for w in woy_range
+        np.array(
+            [
+                glm.params["const"]
+                + sum(
+                    glm.params.get(name, 0.0)
+                    * ([np.sin, np.cos][i % 2])(2 * np.pi * ((i // 2) + 1) * w / 52)
+                    for i, name in enumerate(fourier_names)
+                )
+                for w in woy_range
+            ],
+            dtype=float,
+        )
+    )
+    centered = seasonal_profile - seasonal_profile.mean()
+    crossings = woy_range[np.where(np.diff(np.sign(centered)) != 0)[0]]
+    peak_woy = int(woy_range[np.argmax(seasonal_profile)])
+    trough_woy = int(woy_range[np.argmin(seasonal_profile)])
+    seasonal_component = (
+        np.exp(glm.params["const"] + fourier_arr @ glm.params[fourier_names].values) + args.floor
     )
 
-    # Save plot (you can reuse your existing save_diagnostics_plot function)
-    # For now we just print summary
+    save_diagnostics_plot(
+        df,
+        sigma_hat=sigma_hat,
+        sigma2=sigma2,
+        seasonal_profile=seasonal_profile,
+        seasonal_component=seasonal_component,
+        pred_mean=pred_mean,
+        actual_oos=actual,
+        ci_80_lo=ci80_lo,
+        ci_80_hi=ci80_hi,
+        ci_95_lo=ci95_lo,
+        ci_95_hi=ci95_hi,
+        coverage_80=float(cov80),
+        coverage_95=float(cov95),
+        std_resid=std_resid,
+        peak_woy=peak_woy,
+        trough_woy=trough_woy,
+        crossings=crossings,
+        out_path=out_dir / "poisson_mean_floored_garchx.png",
+    )
+
     print("=" * 70)
     print("POISSON GLM SEASONAL MEAN + FLOORED GARCH-X")
     print("=" * 70)
