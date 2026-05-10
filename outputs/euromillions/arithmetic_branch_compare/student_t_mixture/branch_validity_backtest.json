@@ -1,0 +1,25 @@
+{
+  "holdout": 52,
+  "residual_model": "student_t_mixture",
+  "classic": {
+    "holdout": 52,
+    "mae": 19.826923076923077,
+    "rmse": 26.827440028104405,
+    "median_abs_err": 12.5,
+    "within_10": 0.4230769230769231,
+    "within_20": 0.6538461538461539
+  },
+  "prime-pruned": {
+    "holdout": 52,
+    "mae": 20.096153846153847,
+    "rmse": 26.981831493974436,
+    "median_abs_err": 13.0,
+    "within_10": 0.38461538461538464,
+    "within_20": 0.6538461538461539
+  },
+  "recommended_counts": {
+    "prime-pruned": 52
+  },
+  "recommended_mode_holdout": "classic",
+  "recommendation_basis": "walk-forward one-step holdout rmse"
+}

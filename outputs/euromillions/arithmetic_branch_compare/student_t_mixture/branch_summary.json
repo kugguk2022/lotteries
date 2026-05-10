@@ -1,0 +1,94 @@
+{
+  "raw_rows": 1943,
+  "rows": 1003,
+  "cutoff_start_date": "2016-09-27",
+  "branch_mode": "prime-pruned",
+  "residual_model": "student_t_mixture",
+  "ratio_mode": "raw",
+  "modulus": null,
+  "branch_threshold": 0.5,
+  "current_branch": "lower",
+  "next_branch": "upper",
+  "gcd_last": 1,
+  "last_coprime": true,
+  "upper_count": 302,
+  "lower_count": 503,
+  "prime_ceiling_count": 198,
+  "gcd_coprime_share": 0.6177644710578842,
+  "gcd_rule_match_rate": 0.6826347305389222,
+  "predicted_next_poi": 282.28416710710957,
+  "predicted_score": 282,
+  "predicted_interval_80": [
+    258.1215037128939,
+    311.2313303842419
+  ],
+  "predicted_interval_95": [
+    236.58334578775538,
+    335.0391062966108
+  ],
+  "exact_match_count": 1723571,
+  "exact_matches_saved": false,
+  "nearest_score_gap": 0,
+  "upper_fit": {
+    "branch": "upper",
+    "count": 300,
+    "regression_intercept": 9.817347579736966,
+    "regression_prev_poi": 0.9725043920856327,
+    "regression_prev_ratio": -5.1565461630535605,
+    "regression_prev_coprime": -1.1818047025024008,
+    "rmse": 22.666232635248452,
+    "mae": 16.475538444578028,
+    "selected_distribution": {
+      "family": "student_t_mixture",
+      "loc": -0.0006637462915222159,
+      "scale": 22.666500396652065,
+      "df": null,
+      "aic": 2696.508656268997,
+      "components": [
+        {
+          "weight": 0.49423644629103197,
+          "loc": -3.6125225131061454,
+          "scale": 10.16720038696906,
+          "df": 91916.37810660066
+        },
+        {
+          "weight": 0.505763553708968,
+          "loc": 3.528875360124155,
+          "scale": 29.82627843772848,
+          "df": 2.6145438160772407e+39
+        }
+      ]
+    }
+  },
+  "lower_fit": {
+    "branch": "lower",
+    "count": 503,
+    "regression_intercept": 4.492256324918621,
+    "regression_prev_poi": 0.9575194572336023,
+    "regression_prev_ratio": 1.7398815297302974,
+    "regression_prev_coprime": 1.063308314075912,
+    "rmse": 22.801066503849118,
+    "mae": 17.651502647859278,
+    "selected_distribution": {
+      "family": "student_t_mixture",
+      "loc": 0.0027441985795555457,
+      "scale": 22.803289056423466,
+      "df": null,
+      "aic": 4564.7396926824185,
+      "components": [
+        {
+          "weight": 0.16180145394610118,
+          "loc": -7.3677925505756425,
+          "scale": 4.520827857371595,
+          "df": 3.3539458782183544
+        },
+        {
+          "weight": 0.8381985460538988,
+          "loc": 1.425513980262994,
+          "scale": 24.446247034932615,
+          "df": 2581.6825505234237
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "raw_rows": 1943,
+  "rows": 1003,
+  "cutoff_start_date": "2016-09-27",
+  "branch_mode": "prime-pruned",
+  "residual_model": "auto",
+  "ratio_mode": "raw",
+  "modulus": null,
+  "branch_threshold": 0.5,
+  "current_branch": "lower",
+  "next_branch": "upper",
+  "gcd_last": 1,
+  "last_coprime": true,
+  "upper_count": 302,
+  "lower_count": 503,
+  "prime_ceiling_count": 198,
+  "gcd_coprime_share": 0.6177644710578842,
+  "gcd_rule_match_rate": 0.6826347305389222,
+  "predicted_next_poi": 280.7694119128609,
+  "predicted_score": 281,
+  "predicted_interval_80": [
+    255.58012253182548,
+    305.9587012938963
+  ],
+  "predicted_interval_95": [
+    232.99637055326286,
+    328.5424532724589
+  ],
+  "exact_match_count": 1782187,
+  "exact_matches_saved": false,
+  "nearest_score_gap": 0,
+  "upper_fit": {
+    "branch": "upper",
+    "count": 300,
+    "regression_intercept": 9.817347579736966,
+    "regression_prev_poi": 0.9725043920856327,
+    "regression_prev_ratio": -5.1565461630535605,
+    "regression_prev_coprime": -1.1818047025024008,
+    "rmse": 22.666232635248452,
+    "mae": 16.475538444578028,
+    "selected_distribution": {
+      "family": "student_t",
+      "loc": -1.5154189405402154,
+      "scale": 15.727901133619593,
+      "df": 3.2728970731123903,
+      "aic": 2704.898595228637,
+      "components": null
+    }
+  },
+  "lower_fit": {
+    "branch": "lower",
+    "count": 503,
+    "regression_intercept": 4.492256324918621,
+    "regression_prev_poi": 0.9575194572336023,
+    "regression_prev_ratio": 1.7398815297302974,
+    "regression_prev_coprime": 1.063308314075912,
+    "rmse": 22.801066503849118,
+    "mae": 17.651502647859278,
+    "selected_distribution": {
+      "family": "student_t",
+      "loc": -0.4770581889364224,
+      "scale": 20.115203753116734,
+      "df": 8.731631274394127,
+      "aic": 4571.181240470886,
+      "components": null
+    }
+  }
+}

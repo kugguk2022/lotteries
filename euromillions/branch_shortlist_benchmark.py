@@ -10,6 +10,7 @@ import pandas as pd
 from euromillions.arithmetic_branch import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_HISTORY,
+    RESIDUAL_MODEL_CHOICES,
     DEFAULT_START_DATE,
     DEFAULT_THRESHOLD,
     build_branch_frame,
@@ -51,6 +52,12 @@ def parse_args() -> argparse.Namespace:
         choices=("classic", "prime-pruned"),
         default="classic",
         help="Arithmetic-branch mode used to generate branch shortlists.",
+    )
+    parser.add_argument(
+        "--residual-model",
+        choices=RESIDUAL_MODEL_CHOICES,
+        default="auto",
+        help="Residual density wrapped around the branch regression forecasts.",
     )
     parser.add_argument("--holdout", type=int, default=DEFAULT_HOLDOUT)
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
@@ -209,7 +216,11 @@ def main() -> None:
         )
         pair_diag = build_pair_z_diagnostics(train_history)
 
-        branch_eval = evaluate_branch_mode(branch_frame, branch_mode=str(args.branch_mode))
+        branch_eval = evaluate_branch_mode(
+            branch_frame,
+            branch_mode=str(args.branch_mode),
+            residual_model=str(args.residual_model),
+        )
         _, branch_shortlist, _, branch_gap = search_branch_candidates(
             pair_counts,
             main_n=main_n,
@@ -238,7 +249,7 @@ def main() -> None:
         rows.append(
             {
                 "draw_date": actual_draw["draw_date"],
-                "method": f"branch_{args.branch_mode}",
+                "method": f"branch_{args.branch_mode}_{args.residual_model}",
                 "target_score": int(branch_eval["predicted_score"]),
                 "target_gap": int(branch_gap),
                 "effective_top_n": int(common_n),
@@ -266,12 +277,13 @@ def main() -> None:
         "effective_top_n_min": int(step_frame["effective_top_n"].min()) if not step_frame.empty else 0,
         "effective_top_n_max": int(step_frame["effective_top_n"].max()) if not step_frame.empty else 0,
         "branch_mode": str(args.branch_mode),
+        "residual_model": str(args.residual_model),
     }
     method_summaries: dict[str, dict[str, float | int]] = {}
     for method in step_frame["method"].unique().tolist():
         method_summaries[str(method)] = summarize_method(step_frame[step_frame["method"] == method].reset_index(drop=True))
 
-    branch_key = f"branch_{args.branch_mode}"
+    branch_key = f"branch_{args.branch_mode}_{args.residual_model}"
     benchmark["methods"] = method_summaries
     benchmark["recommended_method_by_recall_at_5"] = max(
         method_summaries,
@@ -309,7 +321,7 @@ def main() -> None:
     print(
         f"Rows: {len(history)}  Holdout: {eff_holdout}  requested_top_n={args.top_n}  "
         f"effective_top_n={benchmark['effective_top_n_min']}..{benchmark['effective_top_n_max']}  "
-        f"branch_mode={args.branch_mode}"
+        f"branch_mode={args.branch_mode}  residual_model={args.residual_model}"
     )
     for method, summary in method_summaries.items():
         print(

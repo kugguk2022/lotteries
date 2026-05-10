@@ -1,0 +1,59 @@
+{
+  "residual_model": "student_t_mixture",
+  "classic": {
+    "upper_count": 500,
+    "lower_count": 503,
+    "prime_ceiling_count": 0,
+    "training_rows": 1001,
+    "residual_model": "student_t_mixture",
+    "current_branch": "lower",
+    "next_branch": "upper",
+    "predicted_next_poi": 279.8238627341702,
+    "predicted_score": 280,
+    "upper_rmse": 22.61509240387316,
+    "upper_mae": 16.6292046145235,
+    "lower_rmse": 22.801066503849118,
+    "lower_mae": 17.651502647859278
+  },
+  "prime-pruned": {
+    "upper_count": 302,
+    "lower_count": 503,
+    "prime_ceiling_count": 198,
+    "training_rows": 803,
+    "residual_model": "student_t_mixture",
+    "current_branch": "lower",
+    "next_branch": "upper",
+    "predicted_next_poi": 282.28416710710957,
+    "predicted_score": 282,
+    "upper_rmse": 22.666232635248452,
+    "upper_mae": 16.475538444578028,
+    "lower_rmse": 22.801066503849118,
+    "lower_mae": 17.651502647859278
+  },
+  "comparison_on_pruned_targets": {
+    "classic": {
+      "shared_rows": 803,
+      "shared_upper_rows": 300,
+      "shared_lower_rows": 503,
+      "shared_mae": 17.22494278317672,
+      "shared_rmse": 22.776717827190783,
+      "shared_upper_mae": 16.5092958576243,
+      "shared_upper_rmse": 22.73583442226508,
+      "shared_lower_mae": 17.651769975355098,
+      "shared_lower_rmse": 22.801066668986692
+    },
+    "prime-pruned": {
+      "shared_rows": 803,
+      "shared_upper_rows": 300,
+      "shared_lower_rows": 503,
+      "shared_mae": 17.212311209297667,
+      "shared_rmse": 22.750786316252448,
+      "shared_upper_mae": 16.475485344874706,
+      "shared_upper_rmse": 22.666232644966854,
+      "shared_lower_mae": 17.651769975355098,
+      "shared_lower_rmse": 22.801066668986692
+    }
+  },
+  "recommended_mode": "prime-pruned",
+  "recommendation_basis": "lowest shared_rmse on composite-only targets"
+}

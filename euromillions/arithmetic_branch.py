@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from scipy.optimize import brentq, minimize
+from scipy.special import expit, logsumexp
 from scipy.stats import norm, t as t_dist
 
 from euromillions.diagnostics3 import (
@@ -35,6 +37,9 @@ DEFAULT_OUT_DIR = REPO_ROOT / "outputs" / "euromillions" / "arithmetic_branch"
 DEFAULT_START_DATE = "2016-09-27"
 DEFAULT_BATCH_SIZE = 200_000
 DEFAULT_THRESHOLD = 0.5
+RESIDUAL_MODEL_CHOICES = ("auto", "normal", "student_t", "student_t_mixture")
+MIN_RESID_SCALE = 1e-6
+MIN_T_DF = 2.1
 
 
 def is_prime_scalar(value: int) -> bool:
@@ -52,12 +57,21 @@ def is_prime_scalar(value: int) -> bool:
 
 
 @dataclass
+class ResidualMixtureComponent:
+    weight: float
+    loc: float
+    scale: float
+    df: float
+
+
+@dataclass
 class ResidualDistribution:
     family: str
     loc: float
     scale: float
     df: float | None
     aic: float
+    components: list[ResidualMixtureComponent] | None = None
 
 
 @dataclass
@@ -79,6 +93,7 @@ class ArithmeticBranchSummary:
     rows: int
     cutoff_start_date: str
     branch_mode: str
+    residual_model: str
     ratio_mode: str
     modulus: int | None
     branch_threshold: float
@@ -132,6 +147,12 @@ def parse_args() -> argparse.Namespace:
         choices=("classic", "prime-pruned"),
         default="classic",
         help="Use the original upper/lower split or exclude prime-ceiling rows from the upper branch model.",
+    )
+    parser.add_argument(
+        "--residual-model",
+        choices=RESIDUAL_MODEL_CHOICES,
+        default="auto",
+        help="Residual density used around each branch regression: baseline auto, normal, student_t, or a 2-component Student-t mixture.",
     )
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--top-n", type=int, default=500)
@@ -278,11 +299,12 @@ def evaluate_branch_mode(
     base_branch_frame: pd.DataFrame,
     *,
     branch_mode: str,
+    residual_model: str,
 ) -> dict[str, object]:
     frame = apply_branch_mode(base_branch_frame, branch_mode=branch_mode)
     training = build_training_frame(frame)
-    upper_model, upper_fit, upper_resid = fit_branch_model(training, "upper")
-    lower_model, lower_fit, lower_resid = fit_branch_model(training, "lower")
+    upper_model, upper_fit, upper_resid = fit_branch_model(training, "upper", residual_model=residual_model)
+    lower_model, lower_fit, lower_resid = fit_branch_model(training, "lower", residual_model=residual_model)
 
     current_branch = resolve_current_branch(frame, branch_mode=branch_mode)
     last_coprime = bool(frame["coprime_prev"].iloc[-1])
@@ -320,6 +342,7 @@ def evaluate_branch_mode(
             "lower_count": int((frame["model_branch"] == "lower").sum()),
             "prime_ceiling_count": int((frame["model_branch"] == "prime_ceiling").sum()),
             "training_rows": int(len(training)),
+            "residual_model": str(residual_model),
             "current_branch": current_branch,
             "next_branch": next_branch,
             "predicted_next_poi": float(predicted_center),
@@ -350,10 +373,18 @@ def predict_rows_for_training(
     return np.asarray(preds, dtype=float)
 
 
-def compare_branch_modes(base_branch_frame: pd.DataFrame) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
+def compare_branch_modes(
+    base_branch_frame: pd.DataFrame,
+    *,
+    residual_model: str,
+) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
     evaluations = {
-        "classic": evaluate_branch_mode(base_branch_frame, branch_mode="classic"),
-        "prime-pruned": evaluate_branch_mode(base_branch_frame, branch_mode="prime-pruned"),
+        "classic": evaluate_branch_mode(base_branch_frame, branch_mode="classic", residual_model=residual_model),
+        "prime-pruned": evaluate_branch_mode(
+            base_branch_frame,
+            branch_mode="prime-pruned",
+            residual_model=residual_model,
+        ),
     }
 
     shared_training = evaluations["prime-pruned"]["training"]
@@ -385,6 +416,7 @@ def compare_branch_modes(base_branch_frame: pd.DataFrame) -> tuple[dict[str, obj
     classic_rmse = float(shared_compare["classic"]["shared_rmse"])
     pruned_rmse = float(shared_compare["prime-pruned"]["shared_rmse"])
     report = {
+        "residual_model": str(residual_model),
         "classic": evaluations["classic"]["metrics"],
         "prime-pruned": evaluations["prime-pruned"]["metrics"],
         "comparison_on_pruned_targets": shared_compare,
@@ -414,10 +446,12 @@ def run_branch_validity_check(
     ratio_mode: str,
     modulus: int | None,
     holdout: int,
+    residual_model: str,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
     if holdout <= 0:
         return pd.DataFrame(), {
             "holdout": 0,
+            "residual_model": str(residual_model),
             "classic": {},
             "prime-pruned": {},
             "recommended_counts": {},
@@ -445,7 +479,7 @@ def run_branch_validity_check(
             modulus=modulus,
             threshold=threshold,
         )
-        compare_report, _ = compare_branch_modes(base_branch_frame)
+        compare_report, _ = compare_branch_modes(base_branch_frame, residual_model=residual_model)
         rows.append(
             {
                 "draw_date": history["draw_date"].iloc[end],
@@ -465,6 +499,7 @@ def run_branch_validity_check(
 
     summary = {
         "holdout": int(len(validity_df)),
+        "residual_model": str(residual_model),
         "classic": classic_summary,
         "prime-pruned": pruned_summary,
         "recommended_counts": {
@@ -479,14 +514,12 @@ def run_branch_validity_check(
     return validity_df, summary
 
 
-def fit_residual_distribution(resid: np.ndarray) -> ResidualDistribution:
-    arr = np.asarray(resid, dtype=float)
-    scale_norm = max(float(arr.std(ddof=0)), 1e-6)
+def fit_normal_distribution(arr: np.ndarray) -> ResidualDistribution:
+    scale_norm = max(float(arr.std(ddof=0)), MIN_RESID_SCALE)
     loc_norm = float(arr.mean())
     ll_norm = float(np.sum(norm.logpdf(arr, loc=loc_norm, scale=scale_norm)))
     aic_norm = 2.0 * 2.0 - 2.0 * ll_norm
-
-    best = ResidualDistribution(
+    return ResidualDistribution(
         family="normal",
         loc=loc_norm,
         scale=scale_norm,
@@ -494,27 +527,190 @@ def fit_residual_distribution(resid: np.ndarray) -> ResidualDistribution:
         aic=aic_norm,
     )
 
-    try:
-        df_t, loc_t, scale_t = t_dist.fit(arr)
-        scale_t = max(float(scale_t), 1e-6)
-        ll_t = float(np.sum(t_dist.logpdf(arr, df=float(df_t), loc=float(loc_t), scale=scale_t)))
-        aic_t = 2.0 * 3.0 - 2.0 * ll_t
-        if aic_t < aic_norm:
-            best = ResidualDistribution(
-                family="student_t",
-                loc=float(loc_t),
-                scale=scale_t,
-                df=float(df_t),
-                aic=aic_t,
-            )
-    except Exception:
-        pass
 
-    return best
+def fit_student_t_distribution(arr: np.ndarray) -> ResidualDistribution:
+    df_t, loc_t, scale_t = t_dist.fit(arr)
+    scale_t = max(float(scale_t), MIN_RESID_SCALE)
+    ll_t = float(np.sum(t_dist.logpdf(arr, df=float(df_t), loc=float(loc_t), scale=scale_t)))
+    aic_t = 2.0 * 3.0 - 2.0 * ll_t
+    return ResidualDistribution(
+        family="student_t",
+        loc=float(loc_t),
+        scale=scale_t,
+        df=float(df_t),
+        aic=aic_t,
+    )
+
+
+def mixture_component_variance(component: ResidualMixtureComponent) -> float:
+    return (component.df / max(component.df - 2.0, 1e-6)) * (component.scale**2)
+
+
+def mixture_distribution(
+    components: list[ResidualMixtureComponent],
+    *,
+    log_likelihood: float,
+) -> ResidualDistribution:
+    mean = float(sum(component.weight * component.loc for component in components))
+    variance = float(
+        sum(
+            component.weight
+            * (mixture_component_variance(component) + ((component.loc - mean) ** 2))
+            for component in components
+        )
+    )
+    return ResidualDistribution(
+        family="student_t_mixture",
+        loc=mean,
+        scale=max(float(np.sqrt(max(variance, MIN_RESID_SCALE**2))), MIN_RESID_SCALE),
+        df=None,
+        aic=(2.0 * 7.0) - (2.0 * float(log_likelihood)),
+        components=components,
+    )
+
+
+def _logit(prob: float) -> float:
+    clipped = float(np.clip(prob, 1e-4, 1.0 - 1e-4))
+    return float(np.log(clipped / (1.0 - clipped)))
+
+
+def _positive_from_log_param(param: float, *, floor: float) -> float:
+    return max(float(np.exp(np.clip(float(param), -12.0, 8.0))), floor)
+
+
+def _student_t_mixture_components_from_params(params: np.ndarray) -> list[ResidualMixtureComponent]:
+    weight_left = float(expit(float(params[0])))
+    loc_left = float(params[1])
+    scale_left = _positive_from_log_param(float(params[2]), floor=MIN_RESID_SCALE)
+    df_left = float(MIN_T_DF + _positive_from_log_param(float(params[3]), floor=1e-3))
+    loc_right = float(params[4])
+    scale_right = _positive_from_log_param(float(params[5]), floor=MIN_RESID_SCALE)
+    df_right = float(MIN_T_DF + _positive_from_log_param(float(params[6]), floor=1e-3))
+    return [
+        ResidualMixtureComponent(weight=weight_left, loc=loc_left, scale=scale_left, df=df_left),
+        ResidualMixtureComponent(weight=1.0 - weight_left, loc=loc_right, scale=scale_right, df=df_right),
+    ]
+
+
+def _student_t_mixture_negloglik(params: np.ndarray, arr: np.ndarray) -> float:
+    components = _student_t_mixture_components_from_params(params)
+    log_terms = np.vstack(
+        [
+            np.log(max(component.weight, 1e-12))
+            + t_dist.logpdf(arr, df=component.df, loc=component.loc, scale=component.scale)
+            for component in components
+        ]
+    )
+    value = -float(np.sum(logsumexp(log_terms, axis=0)))
+    if not np.isfinite(value):
+        return 1e18
+    return value
+
+
+def _student_t_mixture_initial_params(arr: np.ndarray) -> list[np.ndarray]:
+    centered = arr - float(arr.mean())
+    spread = max(float(arr.std(ddof=0)), 1.0)
+    quantiles = np.quantile(arr, [0.35, 0.5, 0.65])
+
+    masks = [
+        arr <= quantiles[1],
+        arr < 0.0,
+        arr <= quantiles[0],
+        arr <= quantiles[2],
+        centered <= 0.0,
+    ]
+    inits: list[np.ndarray] = []
+    for mask in masks:
+        left = arr[mask]
+        right = arr[~mask]
+        if len(left) < 10 or len(right) < 10:
+            continue
+        w0 = float(len(left) / len(arr))
+        left_scale = max(float(left.std(ddof=0)), 0.25 * spread, MIN_RESID_SCALE)
+        right_scale = max(float(right.std(ddof=0)), 0.25 * spread, MIN_RESID_SCALE)
+        inits.append(
+            np.array(
+                [
+                    _logit(w0),
+                    float(left.mean()),
+                    float(np.log(left_scale)),
+                    float(np.log(6.0 - MIN_T_DF)),
+                    float(right.mean()),
+                    float(np.log(right_scale)),
+                    float(np.log(6.0 - MIN_T_DF)),
+                ],
+                dtype=float,
+            )
+        )
+
+    inits.append(
+        np.array(
+            [
+                0.0,
+                float(arr.mean() - 0.75 * spread),
+                float(np.log(max(0.6 * spread, MIN_RESID_SCALE))),
+                float(np.log(8.0 - MIN_T_DF)),
+                float(arr.mean() + 0.75 * spread),
+                float(np.log(max(0.6 * spread, MIN_RESID_SCALE))),
+                float(np.log(8.0 - MIN_T_DF)),
+            ],
+            dtype=float,
+        )
+    )
+    return inits
+
+
+def fit_student_t_mixture_distribution(arr: np.ndarray) -> ResidualDistribution:
+    best_result = None
+    best_value = float("inf")
+    for init in _student_t_mixture_initial_params(arr)[:4]:
+        result = minimize(
+            _student_t_mixture_negloglik,
+            init,
+            args=(arr,),
+            method="L-BFGS-B",
+            options={"maxiter": 450},
+        )
+        objective = float(result.fun)
+        if np.isfinite(objective) and objective < best_value:
+            best_value = objective
+            best_result = result
+
+    if best_result is None:
+        raise RuntimeError("Student-t mixture fit did not converge.")
+
+    components = _student_t_mixture_components_from_params(np.asarray(best_result.x, dtype=float))
+    return mixture_distribution(components, log_likelihood=-best_value)
+
+
+def fit_residual_distribution(resid: np.ndarray, *, residual_model: str) -> ResidualDistribution:
+    arr = np.asarray(resid, dtype=float)
+    if residual_model == "normal":
+        return fit_normal_distribution(arr)
+    if residual_model == "student_t":
+        return fit_student_t_distribution(arr)
+    if residual_model == "student_t_mixture":
+        return fit_student_t_mixture_distribution(arr)
+    if residual_model != "auto":
+        raise ValueError(f"Unsupported residual_model={residual_model}")
+
+    normal_fit = fit_normal_distribution(arr)
+    try:
+        student_t_fit = fit_student_t_distribution(arr)
+    except Exception:
+        student_t_fit = None
+
+    candidates = [normal_fit]
+    if student_t_fit is not None:
+        candidates.append(student_t_fit)
+    return min(candidates, key=lambda dist: float(dist.aic))
 
 
 def fit_branch_model(
-    training: pd.DataFrame, branch_name: str
+    training: pd.DataFrame,
+    branch_name: str,
+    *,
+    residual_model: str,
 ) -> tuple[sm.regression.linear_model.RegressionResultsWrapper, BranchFitSummary, np.ndarray]:
     subset = training[training["target_branch"] == branch_name].reset_index(drop=True)
     if len(subset) < 20:
@@ -525,7 +721,7 @@ def fit_branch_model(
     fitted = np.asarray(model.fittedvalues, dtype=float)
     actual = subset["target_poi"].to_numpy(dtype=float)
     resid = actual - fitted
-    dist = fit_residual_distribution(resid)
+    dist = fit_residual_distribution(resid, residual_model=residual_model)
 
     summary = BranchFitSummary(
         branch=branch_name,
@@ -539,6 +735,52 @@ def fit_branch_model(
         selected_distribution=dist,
     )
     return model, summary, resid
+
+
+def residual_pdf(dist: ResidualDistribution, x: np.ndarray) -> np.ndarray:
+    arr = np.asarray(x, dtype=float)
+    if dist.family == "student_t_mixture" and dist.components:
+        density = np.zeros_like(arr, dtype=float)
+        for component in dist.components:
+            density += component.weight * t_dist.pdf(arr, df=component.df, loc=component.loc, scale=component.scale)
+        return density
+    if dist.family == "student_t" and dist.df is not None:
+        return t_dist.pdf(arr, df=dist.df, loc=dist.loc, scale=dist.scale)
+    return norm.pdf(arr, loc=dist.loc, scale=dist.scale)
+
+
+def residual_cdf(dist: ResidualDistribution, x: float) -> float:
+    point = float(x)
+    if dist.family == "student_t_mixture" and dist.components:
+        return float(
+            sum(
+                component.weight * t_dist.cdf(point, df=component.df, loc=component.loc, scale=component.scale)
+                for component in dist.components
+            )
+        )
+    if dist.family == "student_t" and dist.df is not None:
+        return float(t_dist.cdf(point, df=dist.df, loc=dist.loc, scale=dist.scale))
+    return float(norm.cdf(point, loc=dist.loc, scale=dist.scale))
+
+
+def residual_ppf(dist: ResidualDistribution, quantile: float) -> float:
+    q = float(quantile)
+    if dist.family == "student_t_mixture" and dist.components:
+        lo = min(component.loc - (18.0 * component.scale) for component in dist.components)
+        hi = max(component.loc + (18.0 * component.scale) for component in dist.components)
+        span = max(hi - lo, 8.0 * dist.scale, 10.0)
+        for _ in range(16):
+            cdf_lo = residual_cdf(dist, lo)
+            cdf_hi = residual_cdf(dist, hi)
+            if cdf_lo <= q <= cdf_hi:
+                break
+            lo -= span
+            hi += span
+            span *= 1.75
+        return float(brentq(lambda value: residual_cdf(dist, value) - q, lo, hi))
+    if dist.family == "student_t" and dist.df is not None:
+        return float(t_dist.ppf(q, df=dist.df, loc=dist.loc, scale=dist.scale))
+    return float(norm.ppf(q, loc=dist.loc, scale=dist.scale))
 
 
 def predict_branch_value(
@@ -561,16 +803,10 @@ def predict_branch_value(
     center = conditional_mean + summary.selected_distribution.loc
     dist = summary.selected_distribution
 
-    if dist.family == "student_t" and dist.df is not None:
-        q80 = float(t_dist.ppf(0.90, df=dist.df, loc=center, scale=dist.scale))
-        q20 = float(t_dist.ppf(0.10, df=dist.df, loc=center, scale=dist.scale))
-        q95 = float(t_dist.ppf(0.975, df=dist.df, loc=center, scale=dist.scale))
-        q05 = float(t_dist.ppf(0.025, df=dist.df, loc=center, scale=dist.scale))
-    else:
-        q80 = float(norm.ppf(0.90, loc=center, scale=dist.scale))
-        q20 = float(norm.ppf(0.10, loc=center, scale=dist.scale))
-        q95 = float(norm.ppf(0.975, loc=center, scale=dist.scale))
-        q05 = float(norm.ppf(0.025, loc=center, scale=dist.scale))
+    q80 = conditional_mean + residual_ppf(dist, 0.90)
+    q20 = conditional_mean + residual_ppf(dist, 0.10)
+    q95 = conditional_mean + residual_ppf(dist, 0.975)
+    q05 = conditional_mean + residual_ppf(dist, 0.025)
 
     return center, conditional_mean, (q20, q80), (q05, q95)
 
@@ -790,10 +1026,7 @@ def save_branch_plot(
 
     for fit, color in [(lower_fit, "steelblue"), (upper_fit, "tomato")]:
         dist = fit.selected_distribution
-        if dist.family == "student_t" and dist.df is not None:
-            density = t_dist.pdf(x_grid, df=dist.df, loc=dist.loc, scale=dist.scale)
-        else:
-            density = norm.pdf(x_grid, loc=dist.loc, scale=dist.scale)
+        density = residual_pdf(dist, x_grid)
         ax3.plot(x_grid, density, color=color, lw=2, label=f"{fit.branch} {dist.family}")
 
     ax3.set_title("Branch regression residual densities")
@@ -969,7 +1202,10 @@ def main() -> None:
         modulus=args.modulus,
         threshold=args.threshold,
     )
-    comparison_report, evaluations = compare_branch_modes(base_branch_frame)
+    comparison_report, evaluations = compare_branch_modes(
+        base_branch_frame,
+        residual_model=str(args.residual_model),
+    )
     selected_eval = evaluations[str(args.branch_mode)]
     branch_frame = selected_eval["frame"]
     validity_df, validity_summary = run_branch_validity_check(
@@ -978,6 +1214,7 @@ def main() -> None:
         ratio_mode=str(args.ratio_mode),
         modulus=args.modulus,
         holdout=int(args.validity_holdout),
+        residual_model=str(args.residual_model),
     )
     pair_diag = build_pair_z_diagnostics(history)
     upper_model = selected_eval["upper_model"]
@@ -1048,6 +1285,7 @@ def main() -> None:
         rows=len(branch_frame),
         cutoff_start_date=cutoff_start_date,
         branch_mode=str(args.branch_mode),
+        residual_model=str(args.residual_model),
         ratio_mode=args.ratio_mode,
         modulus=eff_modulus,
         branch_threshold=float(args.threshold),
@@ -1096,6 +1334,7 @@ def main() -> None:
                 "rows": summary.rows,
                 "cutoff_start_date": summary.cutoff_start_date,
                 "branch_mode": summary.branch_mode,
+                "residual_model": summary.residual_model,
                 "ratio_mode": summary.ratio_mode,
                 "modulus": summary.modulus,
                 "branch_threshold": summary.branch_threshold,
@@ -1159,7 +1398,8 @@ def main() -> None:
     print(
         f"Rows: {summary.rows} of {summary.raw_rows}  "
         f"Cutoff: {summary.cutoff_start_date}  "
-        f"ratio={summary.ratio_mode}  modulus={summary.modulus}  branch_mode={summary.branch_mode}"
+        f"ratio={summary.ratio_mode}  modulus={summary.modulus}  "
+        f"branch_mode={summary.branch_mode}  residual_model={summary.residual_model}"
     )
     print(
         f"Branch split: upper={summary.upper_count}  lower={summary.lower_count}  "

@@ -1,0 +1,202 @@
+{
+  "cutoff_start_date": "2016-09-27",
+  "training_shared_target_compare": {
+    "auto": {
+      "predicted_score_prime_pruned": 281,
+      "predicted_next_poi_prime_pruned": 280.7694119128609,
+      "interval_80_prime_pruned": [
+        255.58012253182548,
+        305.9587012938963
+      ],
+      "interval_95_prime_pruned": [
+        232.99637055326286,
+        328.5424532724589
+      ],
+      "upper_family_prime_pruned": "student_t",
+      "lower_family_prime_pruned": "student_t",
+      "upper_aic_prime_pruned": 2704.898595228637,
+      "lower_aic_prime_pruned": 4571.181240470886,
+      "shared_rmse_classic": 22.807304740394617,
+      "shared_rmse_prime_pruned": 22.772764442970477,
+      "shared_mae_prime_pruned": 17.15282976063169,
+      "recommended_mode_training": "prime-pruned",
+      "upper_components_prime_pruned": [],
+      "lower_components_prime_pruned": []
+    },
+    "student_t_mixture": {
+      "predicted_score_prime_pruned": 282,
+      "predicted_next_poi_prime_pruned": 282.27856858025694,
+      "interval_80_prime_pruned": [
+        258.1124747301345,
+        311.21501799366473
+      ],
+      "interval_95_prime_pruned": [
+        236.56781166877394,
+        335.03038784527047
+      ],
+      "upper_family_prime_pruned": "student_t_mixture",
+      "lower_family_prime_pruned": "student_t_mixture",
+      "upper_aic_prime_pruned": 2696.5173361875222,
+      "lower_aic_prime_pruned": 4564.700564130466,
+      "shared_rmse_classic": 22.77671559167797,
+      "shared_rmse_prime_pruned": 22.75079135032416,
+      "shared_mae_prime_pruned": 17.2131181547464,
+      "recommended_mode_training": "prime-pruned",
+      "upper_components_prime_pruned": [
+        {
+          "weight": 0.49437535630452084,
+          "loc": -3.6095672024924292,
+          "scale": 10.165509659613875,
+          "df": 1341.6022432427121
+        },
+        {
+          "weight": 0.5056246436954792,
+          "loc": 3.516875256903258,
+          "scale": 29.8213593027316,
+          "df": 2983.057987041728
+        }
+      ],
+      "lower_components_prime_pruned": [
+        {
+          "weight": 0.1686432237969168,
+          "loc": -7.336602164770621,
+          "scale": 4.549096447879472,
+          "df": 2.679972143429113
+        },
+        {
+          "weight": 0.8313567762030832,
+          "loc": 1.5107576377665404,
+          "scale": 24.45779098205324,
+          "df": 2583.471939090221
+        }
+      ]
+    }
+  },
+  "training_deltas_mixture_minus_auto": {
+    "predicted_score_prime_pruned": 1,
+    "predicted_next_poi_prime_pruned": 1.5091566673960415,
+    "shared_rmse_prime_pruned": -0.021973092646316417,
+    "shared_mae_prime_pruned": 0.06028839411471054
+  },
+  "shortlist_holdout_compare": {
+    "holdout_steps": 3,
+    "requested_top_n": 25,
+    "branch_auto": {
+      "steps": 3,
+      "ticket_budget": 27,
+      "mean_best_ball_hits": 1.0,
+      "recall_at_5": 0.20000000000000004,
+      "mean_best_star_hits": 0.3333333333333333,
+      "recall_at_2_stars": 0.16666666666666666,
+      "any_ball_hit_rate": 0.6666666666666666,
+      "at_least_2_ball_hits_rate": 0.3333333333333333,
+      "at_least_3_ball_hits_rate": 0.0,
+      "any_star_hit_rate": 0.3333333333333333,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_best_rank": 1.3333333333333333
+    },
+    "branch_student_t_mixture": {
+      "steps": 3,
+      "ticket_budget": 27,
+      "mean_best_ball_hits": 1.0,
+      "recall_at_5": 0.20000000000000004,
+      "mean_best_star_hits": 0.0,
+      "recall_at_2_stars": 0.0,
+      "any_ball_hit_rate": 0.6666666666666666,
+      "at_least_2_ball_hits_rate": 0.3333333333333333,
+      "at_least_3_ball_hits_rate": 0.0,
+      "any_star_hit_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_best_rank": 5.333333333333333
+    },
+    "diagnostics3_super_likely": {
+      "steps": 3,
+      "ticket_budget": 27,
+      "mean_best_ball_hits": 0.6666666666666666,
+      "recall_at_5": 0.13333333333333333,
+      "mean_best_star_hits": 1.3333333333333333,
+      "recall_at_2_stars": 0.6666666666666666,
+      "any_ball_hit_rate": 0.3333333333333333,
+      "at_least_2_ball_hits_rate": 0.3333333333333333,
+      "at_least_3_ball_hits_rate": 0.0,
+      "any_star_hit_rate": 1.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_best_rank": 3.6666666666666665
+    },
+    "mixture_minus_auto": {
+      "recall_at_5": 0.0,
+      "mean_best_ball_hits": 0.0,
+      "at_least_2_ball_hits_rate": 0.0,
+      "exact_5plus2_accuracy": 0.0
+    },
+    "auto_minus_diagnostics3": {
+      "recall_at_5": 0.06666666666666671,
+      "mean_best_ball_hits": 0.33333333333333337,
+      "at_least_2_ball_hits_rate": 0.0
+    },
+    "mixture_minus_diagnostics3": {
+      "recall_at_5": 0.06666666666666671,
+      "mean_best_ball_hits": 0.33333333333333337,
+      "at_least_2_ball_hits_rate": 0.0
+    }
+  },
+  "model_only_validity_holdout_12": {
+    "auto": {
+      "holdout": 12,
+      "residual_model": "auto",
+      "classic": {
+        "holdout": 12,
+        "mae": 18.416666666666668,
+        "rmse": 23.641418457162562,
+        "median_abs_err": 10.5,
+        "within_10": 0.5,
+        "within_20": 0.6666666666666666
+      },
+      "prime-pruned": {
+        "holdout": 12,
+        "mae": 19.333333333333332,
+        "rmse": 23.972206128486935,
+        "median_abs_err": 12.5,
+        "within_10": 0.4166666666666667,
+        "within_20": 0.6666666666666666
+      },
+      "recommended_counts": {
+        "prime-pruned": 12
+      },
+      "recommended_mode_holdout": "classic",
+      "recommendation_basis": "walk-forward one-step holdout rmse"
+    },
+    "student_t_mixture": {
+      "holdout": 12,
+      "residual_model": "student_t_mixture",
+      "classic": {
+        "holdout": 12,
+        "mae": 18.666666666666668,
+        "rmse": 23.61143790623519,
+        "median_abs_err": 11.0,
+        "within_10": 0.5,
+        "within_20": 0.6666666666666666
+      },
+      "prime-pruned": {
+        "holdout": 12,
+        "mae": 19.583333333333332,
+        "rmse": 23.96351393264352,
+        "median_abs_err": 12.5,
+        "within_10": 0.3333333333333333,
+        "within_20": 0.6666666666666666
+      },
+      "recommended_counts": {
+        "prime-pruned": 12
+      },
+      "recommended_mode_holdout": "classic",
+      "recommendation_basis": "walk-forward one-step holdout rmse"
+    }
+  },
+  "model_only_validity_deltas_mixture_minus_auto": {
+    "classic_rmse": -0.029980550927373173,
+    "prime_pruned_rmse": -0.008692195843416073
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "holdout": 52,
+  "residual_model": "auto",
+  "classic": {
+    "holdout": 52,
+    "mae": 19.884615384615383,
+    "rmse": 26.91510871096524,
+    "median_abs_err": 13.0,
+    "within_10": 0.4230769230769231,
+    "within_20": 0.6346153846153846
+  },
+  "prime-pruned": {
+    "holdout": 52,
+    "mae": 20.076923076923077,
+    "rmse": 26.972207918522354,
+    "median_abs_err": 13.5,
+    "within_10": 0.4230769230769231,
+    "within_20": 0.6346153846153846
+  },
+  "recommended_counts": {
+    "prime-pruned": 52
+  },
+  "recommended_mode_holdout": "classic",
+  "recommendation_basis": "walk-forward one-step holdout rmse"
+}
