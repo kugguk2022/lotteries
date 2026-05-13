@@ -18,9 +18,16 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy.optimize import minimize
 from scipy.special import gammaln
-from scipy.stats import jarque_bera, probplot, t as t_dist
+from scipy.stats import jarque_bera, probplot
 from statsmodels.graphics.tsaplots import plot_acf
 from statsmodels.stats.diagnostic import acorr_ljungbox
+
+from euromillions.garchx_residuals import (
+    RESIDUAL_MODEL_CHOICES,
+    ResidualDistribution,
+    fit_residual_distribution,
+    residual_ppf,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -29,10 +36,12 @@ DEFAULT_HISTORY = REPO_ROOT / "data" / "euromillions.csv"
 DEFAULT_POI = REPO_ROOT / "outputs" / "euromillions" / "features" / "poi.csv"
 DEFAULT_OUT_DIR = REPO_ROOT / "outputs" / "euromillions" / "garchx"
 FLOOR = 1e-2
+MODEL_VERSION = "v5.0"
 
 
 @dataclass
 class FitSummary:
+    model_version: str
     rows: int
     cutoff_start_date: str
     start_date: str
@@ -41,6 +50,7 @@ class FitSummary:
     fourier_order: int
     holdout: int
     best_garch_order: int
+    residual_model: str
     nll: float
     mean_const: float
     mean_trend: float
@@ -48,6 +58,7 @@ class FitSummary:
     alpha: float
     betas: list[float]
     nu: float
+    innovation_distribution: ResidualDistribution
     variance_fourier: dict[str, float]
     peak_week: int
     trough_week: int
@@ -112,6 +123,12 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=None,
         help="Optional inclusive draw-date cutoff in YYYY-MM-DD for a regime-only rerun.",
+    )
+    parser.add_argument(
+        "--residual-model",
+        choices=RESIDUAL_MODEL_CHOICES,
+        default="student_t_mixture",
+        help="v5.0 innovation calibration applied to standardized GARCH residuals.",
     )
     return parser.parse_args()
 
@@ -273,16 +290,16 @@ def choose_holdout(n_rows: int, requested: int) -> int:
 def save_diagnostics_plot(
     df: pd.DataFrame,
     *,
-    sigma_hat: np.ndarray,
+    point_forecast: np.ndarray,
     sigma2: np.ndarray,
     seasonal_profile: np.ndarray,
     seasonal_component: np.ndarray,
-    pred_mean: np.ndarray,
+    pi_80_lo_full: np.ndarray,
+    pi_80_hi_full: np.ndarray,
+    pi_95_lo_full: np.ndarray,
+    pi_95_hi_full: np.ndarray,
+    pred_center: np.ndarray,
     actual_oos: np.ndarray,
-    ci_80_lo: np.ndarray,
-    ci_80_hi: np.ndarray,
-    ci_95_lo: np.ndarray,
-    ci_95_hi: np.ndarray,
     coverage_80: float,
     coverage_95: float,
     std_resid: np.ndarray,
@@ -300,19 +317,19 @@ def save_diagnostics_plot(
 
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(df["date"], df["poi"], lw=0.6, alpha=0.5, color="steelblue", label="poi")
-    ax1.plot(df["date"], df["mu_hat"], lw=1.2, color="navy", label="mu_hat")
+    ax1.plot(df["date"], point_forecast, lw=1.2, color="navy", label="forecast center")
     ax1.fill_between(
         df["date"],
-        df["mu_hat"] - 1.96 * sigma_hat,
-        df["mu_hat"] + 1.96 * sigma_hat,
+        pi_95_lo_full,
+        pi_95_hi_full,
         alpha=0.25,
         color="tomato",
         label="95% conditional PI",
     )
     ax1.fill_between(
         df["date"],
-        df["mu_hat"] - 1.282 * sigma_hat,
-        df["mu_hat"] + 1.282 * sigma_hat,
+        pi_80_lo_full,
+        pi_80_hi_full,
         alpha=0.35,
         color="tomato",
         label="80% conditional PI",
@@ -343,16 +360,16 @@ def save_diagnostics_plot(
     )
 
     ax3 = fig.add_subplot(gs[1, 1])
-    ax3.plot(df["date"], sigma_hat, lw=0.8, color="tomato")
+    ax3.plot(df["date"], np.sqrt(sigma2), lw=0.8, color="tomato")
     ax3.set_title("Conditional sigma_t over time")
     ax3.set_ylabel("sigma_t")
 
     ax4 = fig.add_subplot(gs[1, 2])
     idx = np.arange(holdout)
     ax4.plot(idx, actual_oos, lw=1, color="steelblue", label="actual")
-    ax4.plot(idx, pred_mean, lw=1.5, color="navy", ls="--", label="mu_hat")
-    ax4.fill_between(idx, ci_95_lo, ci_95_hi, alpha=0.2, color="tomato", label="95% PI")
-    ax4.fill_between(idx, ci_80_lo, ci_80_hi, alpha=0.35, color="tomato", label="80% PI")
+    ax4.plot(idx, pred_center, lw=1.5, color="navy", ls="--", label="forecast center")
+    ax4.fill_between(idx, pi_95_lo_full[-holdout:], pi_95_hi_full[-holdout:], alpha=0.2, color="tomato", label="95% PI")
+    ax4.fill_between(idx, pi_80_lo_full[-holdout:], pi_80_hi_full[-holdout:], alpha=0.35, color="tomato", label="80% PI")
     ax4.set_title(f"OOS: 80% cov={coverage_80:.2f}, 95% cov={coverage_95:.2f}")
     ax4.legend(fontsize=7)
 
@@ -388,7 +405,7 @@ def save_diagnostics_plot(
 
     ax9 = fig.add_subplot(gs[3, 2])
     woy_width = (
-        pd.DataFrame({"woy": df["woy"], "pi_width": 3.92 * sigma_hat})
+        pd.DataFrame({"woy": df["woy"], "pi_width": pi_95_hi_full - pi_95_lo_full})
         .groupby("woy", as_index=True)["pi_width"]
         .mean()
     )
@@ -417,7 +434,7 @@ def main() -> None:
 
     X_mean = sm.add_constant(df[["t", weekday_flag]])
     ols = sm.OLS(df["poi"], X_mean).fit()
-    df["mu_hat"] = ols.fittedvalues
+    df["mean_hat"] = ols.fittedvalues
     df["resid"] = ols.resid
 
     fourier_terms, fourier_names = build_fourier_terms(df["woy"], args.fourier_order)
@@ -447,18 +464,29 @@ def main() -> None:
     )
     sigma_hat = np.sqrt(sigma2)
     std_resid = eps / sigma_hat
+    innovation_dist = fit_residual_distribution(
+        std_resid[1:],
+        residual_model=args.residual_model,
+    )
+    innovation_mean = float(innovation_dist.loc)
+    df["mu_hat"] = df["mean_hat"] + (sigma_hat * innovation_mean)
 
     holdout = choose_holdout(len(df), args.holdout)
     pred_mean = df["mu_hat"].to_numpy(dtype=float)[-holdout:]
-    pred_sigma = sigma_hat[-holdout:]
     actual_oos = df["poi"].to_numpy(dtype=float)[-holdout:]
 
-    q80 = t_dist.ppf(0.90, df=nu_hat)
-    q95 = t_dist.ppf(0.975, df=nu_hat)
-    ci_80_lo = pred_mean - q80 * pred_sigma
-    ci_80_hi = pred_mean + q80 * pred_sigma
-    ci_95_lo = pred_mean - q95 * pred_sigma
-    ci_95_hi = pred_mean + q95 * pred_sigma
+    q10 = residual_ppf(innovation_dist, 0.10)
+    q90 = residual_ppf(innovation_dist, 0.90)
+    q025 = residual_ppf(innovation_dist, 0.025)
+    q975 = residual_ppf(innovation_dist, 0.975)
+    pi_80_lo_full = df["mean_hat"].to_numpy(dtype=float) + (sigma_hat * q10)
+    pi_80_hi_full = df["mean_hat"].to_numpy(dtype=float) + (sigma_hat * q90)
+    pi_95_lo_full = df["mean_hat"].to_numpy(dtype=float) + (sigma_hat * q025)
+    pi_95_hi_full = df["mean_hat"].to_numpy(dtype=float) + (sigma_hat * q975)
+    ci_80_lo = pi_80_lo_full[-holdout:]
+    ci_80_hi = pi_80_hi_full[-holdout:]
+    ci_95_lo = pi_95_lo_full[-holdout:]
+    ci_95_hi = pi_95_hi_full[-holdout:]
 
     coverage_80 = float(np.mean((actual_oos >= ci_80_lo) & (actual_oos <= ci_80_hi)))
     coverage_95 = float(np.mean((actual_oos >= ci_95_lo) & (actual_oos <= ci_95_hi)))
@@ -491,27 +519,27 @@ def main() -> None:
     lb_sq = acorr_ljungbox(std_resid[1:] ** 2, lags=lags, return_df=True)
     _, jb_p = jarque_bera(std_resid[1:])
 
-    fitted_df = df[["date", "poi", "mu_hat"]].copy()
+    fitted_df = df[["date", "poi", "mean_hat", "mu_hat"]].copy()
     fitted_df["sigma_hat"] = sigma_hat
     fitted_df["std_resid"] = std_resid
-    fitted_df["pi95_lo"] = df["mu_hat"] - 1.96 * sigma_hat
-    fitted_df["pi95_hi"] = df["mu_hat"] + 1.96 * sigma_hat
-    fitted_df["pi80_lo"] = df["mu_hat"] - 1.282 * sigma_hat
-    fitted_df["pi80_hi"] = df["mu_hat"] + 1.282 * sigma_hat
+    fitted_df["pi95_lo"] = pi_95_lo_full
+    fitted_df["pi95_hi"] = pi_95_hi_full
+    fitted_df["pi80_lo"] = pi_80_lo_full
+    fitted_df["pi80_hi"] = pi_80_hi_full
     fitted_df.to_csv(out_dir / "garchx_fitted.csv", index=False)
 
     save_diagnostics_plot(
         df,
-        sigma_hat=sigma_hat,
+        point_forecast=df["mu_hat"].to_numpy(dtype=float),
         sigma2=sigma2,
         seasonal_profile=seasonal_profile,
         seasonal_component=seasonal_component,
-        pred_mean=pred_mean,
+        pi_80_lo_full=pi_80_lo_full,
+        pi_80_hi_full=pi_80_hi_full,
+        pi_95_lo_full=pi_95_lo_full,
+        pi_95_hi_full=pi_95_hi_full,
+        pred_center=pred_mean,
         actual_oos=actual_oos,
-        ci_80_lo=ci_80_lo,
-        ci_80_hi=ci_80_hi,
-        ci_95_lo=ci_95_lo,
-        ci_95_hi=ci_95_hi,
         coverage_80=coverage_80,
         coverage_95=coverage_95,
         std_resid=std_resid,
@@ -522,6 +550,7 @@ def main() -> None:
     )
 
     summary = FitSummary(
+        model_version=MODEL_VERSION,
         rows=len(df),
         cutoff_start_date=cutoff_start_date,
         start_date=df["date"].min().date().isoformat(),
@@ -530,6 +559,7 @@ def main() -> None:
         fourier_order=args.fourier_order,
         holdout=holdout,
         best_garch_order=best_order,
+        residual_model=args.residual_model,
         nll=float(nll),
         mean_const=float(ols.params["const"]),
         mean_trend=float(ols.params["t"]),
@@ -537,6 +567,7 @@ def main() -> None:
         alpha=alpha_hat,
         betas=[float(value) for value in betas_hat],
         nu=nu_hat,
+        innovation_distribution=innovation_dist,
         variance_fourier={name: float(value) for name, value in zip(fourier_names, gamma_hat)},
         peak_week=peak_woy,
         trough_week=trough_woy,
@@ -571,6 +602,10 @@ def main() -> None:
     print(
         f"Selected GARCH(1,{best_order})-t  "
         f"alpha={alpha_hat:.4f}  betas={[round(float(v), 4) for v in betas_hat]}  nu={nu_hat:.2f}"
+    )
+    print(
+        f"Innovation calibration: {args.residual_model}  "
+        f"loc={innovation_dist.loc:.4f}  scale={innovation_dist.scale:.4f}"
     )
     print(
         f"Seasonality: peak week={peak_woy}, trough week={trough_woy}, "
