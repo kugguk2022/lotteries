@@ -98,12 +98,27 @@ def move_directory(name: str, destination_root: Path) -> None:
     shutil.move(str(src), str(dst))
 
 
+def restore_directory(name: str) -> None:
+    src = LEGACY_DIR / name
+    dst = OUTPUTS_ROOT / name
+    if not src.exists():
+        return
+    if dst.exists():
+        if dst.is_dir():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink()
+    shutil.move(str(src), str(dst))
+
+
 def main() -> None:
     ranked = rank_primary_approaches()
     keep = {item.name for item in ranked if item.kept_outside_legacy}
     move_to_legacy = sorted((set(PRIMARY_APPROACHES) - keep) | set(LEGACY_ONLY_APPROACHES))
 
     LEGACY_DIR.mkdir(parents=True, exist_ok=True)
+    for name in sorted(keep):
+        restore_directory(name)
     for name in move_to_legacy:
         move_directory(name, LEGACY_DIR)
 
@@ -129,9 +144,11 @@ def main() -> None:
         "## Ranked approaches",
     ]
     for index, item in enumerate(ranked, start=1):
+        coverage80 = f"{item.coverage_80:.4f}" if item.coverage_80 is not None else "na"
+        coverage95 = f"{item.coverage_95:.4f}" if item.coverage_95 is not None else "na"
         lines.append(
             f"- {index}. `{item.name}` | rmse={item.rmse:.4f} | mae={item.mae:.4f} | "
-            f"coverage80={item.coverage_80:.4f if item.coverage_80 is not None else 'na'}"
+            f"coverage80={coverage80} | coverage95={coverage95}"
         )
     (OUTPUTS_ROOT / "top_garch_approaches.md").write_text(
         "\n".join(lines) + "\n",
