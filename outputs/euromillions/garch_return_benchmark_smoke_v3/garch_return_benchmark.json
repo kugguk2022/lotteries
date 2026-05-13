@@ -1,0 +1,99 @@
+{
+  "benchmark_mode": "walk_forward_n_plus_1_with_realized_prize_per_winner",
+  "holdout_steps": 3,
+  "evaluation_start_date": "2026-04-28",
+  "evaluation_end_date": "2026-05-05",
+  "requested_top_n": 10,
+  "candidate_pool_size": 1024,
+  "ticket_cost": 2.5,
+  "prize_alignment_note": "Prize tables were fetched by exact draw date from lottery.co.uk and scored on the Prize Per Winner column, then cached locally.",
+  "models": [
+    "garchx",
+    "garchx_alternative_volatility",
+    "garchx_alternative_volatility_v2"
+  ],
+  "model_windows": {
+    "garchx": {
+      "start_date": "2004-02-13",
+      "kind": "base",
+      "residual_model": "student_t_mixture",
+      "fourier_order": 2
+    },
+    "garchx_alternative_volatility": {
+      "start_date": "2004-02-13",
+      "kind": "alternative",
+      "residual_model": "student_t_mixture",
+      "fourier_order": 2
+    },
+    "garchx_alternative_volatility_v2": {
+      "start_date": "2016-09-27",
+      "kind": "alternative",
+      "residual_model": "student_t_mixture",
+      "fourier_order": 2
+    }
+  },
+  "ranking_by_roi": [
+    "garchx",
+    "garchx_alternative_volatility",
+    "garchx_alternative_volatility_v2"
+  ],
+  "methods": {
+    "garchx": {
+      "steps": 3,
+      "total_ticket_cost": 75.0,
+      "total_return": 2.8,
+      "net_profit": -72.2,
+      "roi": -0.9626666666666667,
+      "mean_return_per_draw": 0.9333333333333332,
+      "mean_profit_per_draw": -24.066666666666666,
+      "mean_best_ball_hits": 1.3333333333333333,
+      "mean_best_star_hits": 0.0,
+      "mean_best_ticket_payout": 0.9333333333333332,
+      "any_payout_draw_rate": 0.3333333333333333,
+      "break_even_draw_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 166.33333333333334,
+      "mean_abs_poi_error": 17.99854443763681,
+      "mean_shortlist_size": 10.0
+    },
+    "garchx_alternative_volatility": {
+      "steps": 3,
+      "total_ticket_cost": 75.0,
+      "total_return": 2.8,
+      "net_profit": -72.2,
+      "roi": -0.9626666666666667,
+      "mean_return_per_draw": 0.9333333333333332,
+      "mean_profit_per_draw": -24.066666666666666,
+      "mean_best_ball_hits": 1.3333333333333333,
+      "mean_best_star_hits": 0.0,
+      "mean_best_ticket_payout": 0.9333333333333332,
+      "any_payout_draw_rate": 0.3333333333333333,
+      "break_even_draw_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 166.33333333333334,
+      "mean_abs_poi_error": 17.688688583594608,
+      "mean_shortlist_size": 10.0
+    },
+    "garchx_alternative_volatility_v2": {
+      "steps": 3,
+      "total_ticket_cost": 75.0,
+      "total_return": 2.8,
+      "net_profit": -72.2,
+      "roi": -0.9626666666666667,
+      "mean_return_per_draw": 0.9333333333333332,
+      "mean_profit_per_draw": -24.066666666666666,
+      "mean_best_ball_hits": 1.3333333333333333,
+      "mean_best_star_hits": 0.0,
+      "mean_best_ticket_payout": 0.9333333333333332,
+      "any_payout_draw_rate": 0.3333333333333333,
+      "break_even_draw_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 167.33333333333334,
+      "mean_abs_poi_error": 17.019228396127364,
+      "mean_shortlist_size": 10.0
+    }
+  }
+}

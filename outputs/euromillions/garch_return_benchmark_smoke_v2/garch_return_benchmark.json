@@ -1,0 +1,74 @@
+{
+  "benchmark_mode": "saved_tail_predictions_with_forward_ticket_scoring",
+  "holdout_steps": 4,
+  "requested_top_n": 10,
+  "candidate_pool_size": 2048,
+  "ticket_cost": 2.5,
+  "prize_alignment_note": "Per-draw prize tables were aligned to the last available history draws by tail count because prizes_range.json has draw ids but no draw dates.",
+  "models": [
+    "garchx",
+    "garchx_alternative_volatility",
+    "garchx_alternative_volatility_v2"
+  ],
+  "ranking_by_roi": [
+    "garchx",
+    "garchx_alternative_volatility",
+    "garchx_alternative_volatility_v2"
+  ],
+  "methods": {
+    "garchx": {
+      "steps": 4,
+      "total_ticket_cost": 100.0,
+      "total_return": 2352392.4000000004,
+      "net_profit": 2352292.4000000004,
+      "roi": 23522.924000000003,
+      "mean_return_per_draw": 588098.1000000001,
+      "mean_profit_per_draw": 588073.1000000001,
+      "mean_best_ball_hits": 1.5,
+      "mean_best_star_hits": 0.0,
+      "any_payout_draw_rate": 0.5,
+      "break_even_draw_rate": 0.5,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 166.25,
+      "mean_abs_poi_error": 15.491952956215314,
+      "mean_shortlist_size": 10.0
+    },
+    "garchx_alternative_volatility": {
+      "steps": 4,
+      "total_ticket_cost": 100.0,
+      "total_return": 2352392.4000000004,
+      "net_profit": 2352292.4000000004,
+      "roi": 23522.924000000003,
+      "mean_return_per_draw": 588098.1000000001,
+      "mean_profit_per_draw": 588073.1000000001,
+      "mean_best_ball_hits": 1.5,
+      "mean_best_star_hits": 0.0,
+      "any_payout_draw_rate": 0.5,
+      "break_even_draw_rate": 0.5,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 166.75,
+      "mean_abs_poi_error": 15.259550428398754,
+      "mean_shortlist_size": 10.0
+    },
+    "garchx_alternative_volatility_v2": {
+      "steps": 4,
+      "total_ticket_cost": 100.0,
+      "total_return": 2352392.4000000004,
+      "net_profit": 2352292.4000000004,
+      "roi": 23522.924000000003,
+      "mean_return_per_draw": 588098.1000000001,
+      "mean_profit_per_draw": 588073.1000000001,
+      "mean_best_ball_hits": 1.5,
+      "mean_best_star_hits": 0.0,
+      "any_payout_draw_rate": 0.5,
+      "break_even_draw_rate": 0.5,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 167.5,
+      "mean_abs_poi_error": 14.806353085179573,
+      "mean_shortlist_size": 10.0
+    }
+  }
+}
