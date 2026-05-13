@@ -1,0 +1,74 @@
+{
+  "benchmark_mode": "saved_tail_predictions_with_forward_ticket_scoring",
+  "holdout_steps": 4,
+  "requested_top_n": 10,
+  "candidate_pool_size": 66,
+  "ticket_cost": 2.5,
+  "prize_alignment_note": "Per-draw prize tables were aligned to the last available history draws by tail count because prizes_range.json has draw ids but no draw dates.",
+  "models": [
+    "garchx",
+    "garchx_alternative_volatility",
+    "garchx_alternative_volatility_v2"
+  ],
+  "ranking_by_roi": [
+    "garchx",
+    "garchx_alternative_volatility",
+    "garchx_alternative_volatility_v2"
+  ],
+  "methods": {
+    "garchx": {
+      "steps": 4,
+      "total_ticket_cost": 10.0,
+      "total_return": 0.0,
+      "net_profit": -10.0,
+      "roi": -1.0,
+      "mean_return_per_draw": 0.0,
+      "mean_profit_per_draw": -2.5,
+      "mean_best_ball_hits": 0.25,
+      "mean_best_star_hits": 0.25,
+      "any_payout_draw_rate": 0.0,
+      "break_even_draw_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 215.0,
+      "mean_abs_poi_error": 15.491952956215314,
+      "mean_shortlist_size": 1.0
+    },
+    "garchx_alternative_volatility": {
+      "steps": 4,
+      "total_ticket_cost": 10.0,
+      "total_return": 0.0,
+      "net_profit": -10.0,
+      "roi": -1.0,
+      "mean_return_per_draw": 0.0,
+      "mean_profit_per_draw": -2.5,
+      "mean_best_ball_hits": 0.25,
+      "mean_best_star_hits": 0.25,
+      "any_payout_draw_rate": 0.0,
+      "break_even_draw_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 215.5,
+      "mean_abs_poi_error": 15.259550428398754,
+      "mean_shortlist_size": 1.0
+    },
+    "garchx_alternative_volatility_v2": {
+      "steps": 4,
+      "total_ticket_cost": 10.0,
+      "total_return": 0.0,
+      "net_profit": -10.0,
+      "roi": -1.0,
+      "mean_return_per_draw": 0.0,
+      "mean_profit_per_draw": -2.5,
+      "mean_best_ball_hits": 0.25,
+      "mean_best_star_hits": 0.25,
+      "any_payout_draw_rate": 0.0,
+      "break_even_draw_rate": 0.0,
+      "exact_main5_accuracy": 0.0,
+      "exact_5plus2_accuracy": 0.0,
+      "mean_target_gap": 216.25,
+      "mean_abs_poi_error": 14.806353085179573,
+      "mean_shortlist_size": 1.0
+    }
+  }
+}
